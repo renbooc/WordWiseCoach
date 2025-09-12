@@ -1,5 +1,4 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import type { Server } from "http";
 import multer from "multer";
 import { storage } from "./storage-instance.js";
 import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema } from "../shared/schema.js";
@@ -9,9 +8,7 @@ import passport, { hashPassword } from './auth.js';
 // Extend the Express Request type to include our User object
 declare global {
   namespace Express {
-    interface Request {
-      user?: User;
-    }
+    interface User extends User {}
   }
 }
 
@@ -79,7 +76,7 @@ export function registerRoutes(app: Express) {
   });
 
   app.post('/api/auth/login', passport.authenticate('local'), (req, res) => {
-    const { hashedPassword, ...userWithoutPassword } = req.user!;
+    const { hashedPassword, ...userWithoutPassword } = req.user as User;
     res.json(userWithoutPassword);
   });
 
@@ -96,7 +93,7 @@ export function registerRoutes(app: Express) {
 
   app.get('/api/auth/me', (req, res) => {
     if (req.isAuthenticated() && req.user) {
-      const { hashedPassword, ...userWithoutPassword } = req.user;
+      const { hashedPassword, ...userWithoutPassword } = req.user as User;
       res.json(userWithoutPassword);
     } else {
       res.status(401).json({ message: 'Not authenticated' });
@@ -148,7 +145,7 @@ export function registerRoutes(app: Express) {
       if (!word) {
         return res.status(404).json({ message: "Word not found" });
       }
-      const progress = await storage.getUserProgress(req.user!.id, req.params.id);
+      const progress = await storage.getUserProgress((req.user as User).id, req.params.id);
       res.json({ ...word, progress });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch word details" });
@@ -159,7 +156,7 @@ export function registerRoutes(app: Express) {
     try {
       const { wordId } = req.params;
       const progressData = req.body;
-      const updatedProgress = await storage.updateUserProgress(req.user!.id, wordId, progressData);
+      const updatedProgress = await storage.updateUserProgress((req.user as User).id, wordId, progressData);
       res.json(updatedProgress);
     } catch (error) {
       res.status(500).json({ message: "Failed to update progress" });
@@ -168,7 +165,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/words-for-review", isAuthenticated, async (req, res) => {
     try {
-      const words = await storage.getWordsForReview(req.user!.id);
+      const words = await storage.getWordsForReview((req.user as User).id);
       res.json(words);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch review words" });
@@ -181,7 +178,7 @@ export function registerRoutes(app: Express) {
       if (!result.success) {
         return res.status(400).json({ message: "Invalid session data" });
       }
-      const session = await storage.createStudySession({ ...result.data, userId: req.user!.id });
+      const session = await storage.createStudySession({ ...result.data, userId: (req.user as User).id });
       res.json(session);
     } catch (error) {
       res.status(500).json({ message: "Failed to create study session" });
@@ -194,7 +191,7 @@ export function registerRoutes(app: Express) {
       if (!result.success) {
         return res.status(400).json({ message: "Invalid practice result data" });
       }
-      const practiceResult = await storage.savePracticeResult({ ...result.data, userId: req.user!.id });
+      const practiceResult = await storage.savePracticeResult({ ...result.data, userId: (req.user as User).id });
       res.json(practiceResult);
     } catch (error) {
       res.status(500).json({ message: "Failed to save practice result" });
@@ -207,7 +204,7 @@ export function registerRoutes(app: Express) {
       if (!result.success) {
         return res.status(400).json({ message: "Invalid study plan data" });
       }
-      const plan = await storage.createStudyPlan({ ...result.data, userId: req.user!.id });
+      const plan = await storage.createStudyPlan({ ...result.data, userId: (req.user as User).id });
       res.json(plan);
     } catch (error) {
       res.status(500).json({ message: "Failed to create study plan" });
@@ -216,7 +213,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/study-plans/active", isAuthenticated, async (req, res) => {
     try {
-      const plan = await storage.getActiveStudyPlan(req.user!.id);
+      const plan = await storage.getActiveStudyPlan((req.user as User).id);
       res.json(plan);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch active study plan" });
@@ -227,7 +224,7 @@ export function registerRoutes(app: Express) {
     try {
       const { id } = req.params;
       const updates = req.body;
-      const updatedPlan = await storage.updateStudyPlan(req.user!.id, id, updates);
+      const updatedPlan = await storage.updateStudyPlan((req.user as User).id, id, updates);
       res.json(updatedPlan);
     } catch (error) {
       res.status(500).json({ message: "Failed to update study plan" });
@@ -236,7 +233,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/dashboard/stats", isAuthenticated, async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats(req.user!.id);
+      const stats = await storage.getDashboardStats((req.user as User).id);
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
@@ -245,7 +242,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/vocabulary-book", isAuthenticated, async (req, res) => {
     try {
-      const words = await storage.getVocabularyBook(req.user!.id);
+      const words = await storage.getVocabularyBook((req.user as User).id);
       res.json(words);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch vocabulary book" });
@@ -254,7 +251,7 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/starred-words", isAuthenticated, async (req, res) => {
     try {
-      const words = await storage.getStarredWords(req.user!.id);
+      const words = await storage.getStarredWords((req.user as User).id);
       res.json(words);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch starred words" });
@@ -263,7 +260,7 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/words/:id/star", isAuthenticated, async (req, res) => {
     try {
-      await storage.toggleWordStar(req.user!.id, req.params.id);
+      await storage.toggleWordStar((req.user as User).id, req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to toggle star" });
@@ -272,7 +269,7 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/words/:id/add-to-vocabulary", isAuthenticated, async (req, res) => {
     try {
-      await storage.addToVocabularyBook(req.user!.id, req.params.id);
+      await storage.addToVocabularyBook((req.user as User).id, req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to add to vocabulary book" });
