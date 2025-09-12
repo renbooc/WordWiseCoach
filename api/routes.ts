@@ -5,10 +5,13 @@ import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPractic
 import type { User } from "../shared/schema.js";
 import passport, { hashPassword } from './auth.js';
 
-// Extend the Express Request type to include our User object
+import type { User as SchemaUser } from "../shared/schema.js";
+
+// Extend the Express Request type to include our User object from the schema
 declare global {
   namespace Express {
-    interface User extends User {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-interface
+    interface User extends SchemaUser {}
   }
 }
 
