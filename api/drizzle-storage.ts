@@ -1,6 +1,7 @@
 import { db } from "./db.js";
-import { type User, type Word, type UserProgress, type StudySession, type PracticeResult, type StudyPlan, type InsertUser, type InsertWord, type InsertUserProgress, type InsertStudySession, type InsertPracticeResult, type InsertStudyPlan, type WordWithProgress, type DashboardStats, users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
-import { IStorage } from "./storage.js";
+import { users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
+import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
+import type { IStorage } from "./storage.js";
 import { eq, and, lte, gte, asc, desc, sql } from "drizzle-orm";
 
 export class DrizzleStorage implements IStorage {
