@@ -3,6 +3,13 @@ import { pgTable, text, varchar, integer, boolean, timestamp, real, jsonb } from
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  hashedPassword: text("hashed_password").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 export const words = pgTable("words", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   word: text("word").notNull(),
@@ -18,7 +25,8 @@ export const words = pgTable("words", {
 
 export const userProgress = pgTable("user_progress", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  wordId: varchar("word_id").notNull().references(() => words.id),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  wordId: varchar("word_id").notNull().references(() => words.id, { onDelete: 'cascade' }),
   masteryLevel: integer("mastery_level").notNull().default(0), // 0-100
   timesStudied: integer("times_studied").notNull().default(0),
   timesCorrect: integer("times_correct").notNull().default(0),
@@ -30,6 +38,7 @@ export const userProgress = pgTable("user_progress", {
 
 export const studySessions = pgTable("study_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   sessionType: text("session_type").notNull(), // study, practice, review
   wordsLearned: integer("words_learned").notNull().default(0),
   timeSpent: integer("time_spent").notNull().default(0), // in minutes
@@ -39,8 +48,9 @@ export const studySessions = pgTable("study_sessions", {
 
 export const practiceResults = pgTable("practice_results", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => studySessions.id),
-  wordId: varchar("word_id").notNull().references(() => words.id),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: varchar("session_id").notNull().references(() => studySessions.id, { onDelete: 'cascade' }),
+  wordId: varchar("word_id").notNull().references(() => words.id, { onDelete: 'cascade' }),
   exerciseType: text("exercise_type").notNull(), // multiple-choice, fill-blank, translation, listening
   isCorrect: boolean("is_correct").notNull(),
   userAnswer: text("user_answer"),
@@ -50,6 +60,7 @@ export const practiceResults = pgTable("practice_results", {
 
 export const studyPlans = pgTable("study_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   targetCategory: text("target_category").notNull(),
   dailyWordCount: integer("daily_word_count").notNull().default(20),
@@ -60,6 +71,8 @@ export const studyPlans = pgTable("study_plans", {
   isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
+
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 
 export const insertWordSchema = createInsertSchema(words).omit({
   id: true,
@@ -83,36 +96,16 @@ export const insertStudyPlanSchema = createInsertSchema(studyPlans).omit({
   createdAt: true,
 });
 
+export type User = typeof users.$inferSelect;
 export type Word = typeof words.$inferSelect;
 export type UserProgress = typeof userProgress.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type PracticeResult = typeof practiceResults.$inferSelect;
 export type StudyPlan = typeof studyPlans.$inferSelect;
 
+export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertWord = z.infer<typeof insertWordSchema>;
 export type InsertUserProgress = z.infer<typeof insertUserProgressSchema>;
 export type InsertStudySession = z.infer<typeof insertStudySessionSchema>;
 export type InsertPracticeResult = z.infer<typeof insertPracticeResultSchema>;
 export type InsertStudyPlan = z.infer<typeof insertStudyPlanSchema>;
-
-// Additional types for API responses
-export type WordWithProgress = Word & {
-  progress?: UserProgress;
-};
-
-export type DashboardStats = {
-  streakDays: number;
-  totalWordsLearned: number;
-  masteryRate: number;
-  todayStudyTime: number;
-  todayProgress: {
-    newWords: { current: number; target: number };
-    review: { current: number; target: number };
-    listening: { current: number; target: number };
-  };
-  reviewReminders: {
-    urgent: number;
-    regular: number;
-    consolidation: number;
-  };
-};
