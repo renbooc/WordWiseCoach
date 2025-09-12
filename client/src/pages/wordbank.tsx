@@ -6,23 +6,52 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Search, Filter, Volume2, Edit, Star, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Search, Filter, Volume2, Edit, Star, Trash2, ChevronLeft, ChevronRight, Plus, BookPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { WordWithProgress } from "@shared/schema";
+import { insertWordSchema } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 type WordCategory = "all" | "junior" | "senior" | "vocabulary-book" | "starred" | "mastered";
 type SortOption = "alphabetical" | "date-added" | "mastery" | "review-time";
+
+const addWordSchema = insertWordSchema.extend({
+  difficulty: z.coerce.number().min(1).max(5),
+  frequency: z.coerce.number().min(1).max(10),
+});
 
 export default function WordBank() {
   const [selectedCategory, setSelectedCategory] = useState<WordCategory>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("alphabetical");
   const [currentPage, setCurrentPage] = useState(1);
+  const [showAddWordDialog, setShowAddWordDialog] = useState(false);
   const wordsPerPage = 20;
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Form for adding new words
+  const addWordForm = useForm<z.infer<typeof addWordSchema>>({
+    resolver: zodResolver(addWordSchema),
+    defaultValues: {
+      word: "",
+      phonetic: "",
+      partOfSpeech: "noun",
+      chineseDefinition: "",
+      englishExample: "",
+      chineseExample: "",
+      difficulty: 1,
+      category: "general",
+      frequency: 1,
+    },
+  });
 
   // Fetch words based on category
   const getWordsQuery = () => {
@@ -66,6 +95,30 @@ export default function WordBank() {
       queryClient.invalidateQueries({ queryKey: ["/api/vocabulary-book"] });
     },
   });
+
+  const createWordMutation = useMutation({
+    mutationFn: async (wordData: z.infer<typeof addWordSchema>) => {
+      const response = await apiRequest("POST", `/api/words`, wordData);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "单词创建成功！", description: "新单词已添加到词库中。" });
+      queryClient.invalidateQueries({ queryKey: ["/api/words"] });
+      setShowAddWordDialog(false);
+      addWordForm.reset();
+    },
+    onError: (error) => {
+      toast({ 
+        title: "创建失败", 
+        description: "添加单词时出现错误，请检查输入的信息。", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const onSubmitWord = (data: z.infer<typeof addWordSchema>) => {
+    createWordMutation.mutate(data);
+  };
 
   // Filter and sort words
   const filteredWords = allWords?.filter(word => {
@@ -165,8 +218,212 @@ export default function WordBank() {
   return (
     <div className="space-y-8">
       <div className="mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2">单词库管理</h2>
-        <p className="text-muted-foreground">管理和组织你的单词集合</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-bold text-foreground mb-2">单词库管理</h2>
+            <p className="text-muted-foreground">管理和组织你的单词集合</p>
+          </div>
+          <Dialog open={showAddWordDialog} onOpenChange={setShowAddWordDialog}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-word" className="learning-card-gradient text-white">
+                <Plus className="mr-2 h-4 w-4" />
+                录入单词
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold">手工录入单词</DialogTitle>
+              </DialogHeader>
+              <Form {...addWordForm}>
+                <form onSubmit={addWordForm.handleSubmit(onSubmitWord)} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={addWordForm.control}
+                      name="word"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>英文单词 *</FormLabel>
+                          <FormControl>
+                            <Input placeholder="请输入英文单词" {...field} data-testid="input-word" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={addWordForm.control}
+                      name="phonetic"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>音标 *</FormLabel>
+                          <FormControl>
+                            <Input placeholder="如: /ˈbjuːtɪfʊl/" {...field} data-testid="input-phonetic" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField
+                      control={addWordForm.control}
+                      name="partOfSpeech"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>词性 *</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-pos">
+                                <SelectValue placeholder="选择词性" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="noun">名词</SelectItem>
+                              <SelectItem value="verb">动词</SelectItem>
+                              <SelectItem value="adjective">形容词</SelectItem>
+                              <SelectItem value="adverb">副词</SelectItem>
+                              <SelectItem value="preposition">介词</SelectItem>
+                              <SelectItem value="pronoun">代词</SelectItem>
+                              <SelectItem value="conjunction">连词</SelectItem>
+                              <SelectItem value="interjection">感叹词</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={addWordForm.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>分类</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-category">
+                                <SelectValue placeholder="选择分类" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="general">通用</SelectItem>
+                              <SelectItem value="junior">初中</SelectItem>
+                              <SelectItem value="senior">高中</SelectItem>
+                              <SelectItem value="advanced">高级</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={addWordForm.control}
+                      name="difficulty"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>难度级别 (1-5)</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value.toString()}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-difficulty">
+                                <SelectValue placeholder="选择难度" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="1">1 - 简单</SelectItem>
+                              <SelectItem value="2">2 - 较简单</SelectItem>
+                              <SelectItem value="3">3 - 中等</SelectItem>
+                              <SelectItem value="4">4 - 较难</SelectItem>
+                              <SelectItem value="5">5 - 困难</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={addWordForm.control}
+                    name="chineseDefinition"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>中文释义 *</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="请输入中文释义"
+                            className="min-h-[80px]"
+                            {...field}
+                            data-testid="input-chinese-definition"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={addWordForm.control}
+                    name="englishExample"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>英文例句 *</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="请输入英文例句"
+                            className="min-h-[80px]"
+                            {...field}
+                            data-testid="input-english-example"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={addWordForm.control}
+                    name="chineseExample"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>中文例句 *</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="请输入中文例句"
+                            className="min-h-[80px]"
+                            {...field}
+                            data-testid="input-chinese-example"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setShowAddWordDialog(false)}
+                      data-testid="button-cancel-add-word"
+                    >
+                      取消
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={createWordMutation.isPending}
+                      data-testid="button-submit-add-word"
+                    >
+                      {createWordMutation.isPending ? "添加中..." : "添加单词"}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">

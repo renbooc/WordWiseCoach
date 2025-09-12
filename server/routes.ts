@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema } from "@shared/schema";
+import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertWordSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Words API
@@ -21,6 +21,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(words);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch words" });
+    }
+  });
+
+  app.post("/api/words", async (req, res) => {
+    try {
+      console.log("POST /api/words - Request body:", JSON.stringify(req.body, null, 2));
+      const result = insertWordSchema.safeParse(req.body);
+      if (!result.success) {
+        console.log("Validation errors:", result.error.issues);
+        return res.status(400).json({ 
+          message: "Invalid word data", 
+          errors: result.error.issues 
+        });
+      }
+      
+      const word = await storage.createWord(result.data);
+      console.log("Word created successfully:", word.id);
+      res.json(word);
+    } catch (error) {
+      console.error("Error creating word:", error);
+      res.status(500).json({ message: "Failed to create word" });
     }
   });
 
