@@ -37,10 +37,10 @@ export interface IStorage {
   getDashboardStats(): Promise<DashboardStats>;
   
   // Word collections
-  getVocabularyBook(): Promise<WordWithProgress[]>;
-  getStarredWords(): Promise<WordWithProgress[]>;
-  toggleWordStar(wordId: string): Promise<void>;
-  addToVocabularyBook(wordId: string): Promise<void>;
+  getVocabularyBook(userId: string): Promise<WordWithProgress[]>;
+  getStarredWords(userId: string): Promise<WordWithProgress[]>;
+  toggleWordStar(userId: string, wordId: string): Promise<void>;
+  addToVocabularyBook(userId: string, wordId: string): Promise<void>;
 }
 
 // Export an instance of the DrizzleStorage to be used by the application

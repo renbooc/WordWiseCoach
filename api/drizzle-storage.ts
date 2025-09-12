@@ -127,29 +127,29 @@ export class DrizzleStorage implements IStorage {
   }
   
   // Word collections
-  async getVocabularyBook(): Promise<WordWithProgress[]> {
+  async getVocabularyBook(userId: string): Promise<WordWithProgress[]> {
     const results = await db.select().from(words)
       .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(eq(userProgress.isInVocabularyBook, true));
+      .where(and(eq(userProgress.userId, userId), eq(userProgress.isInVocabularyBook, true)));
     return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
   }
 
-  async getStarredWords(): Promise<WordWithProgress[]> {
+  async getStarredWords(userId: string): Promise<WordWithProgress[]> {
     const results = await db.select().from(words)
       .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(eq(userProgress.isStarred, true));
+      .where(and(eq(userProgress.userId, userId), eq(userProgress.isStarred, true)));
     return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
   }
 
-  async toggleWordStar(wordId: string): Promise<void> {
+  async toggleWordStar(userId: string, wordId: string): Promise<void> {
     // This requires fetching first, then updating, which can be prone to race conditions.
     // A raw SQL query or a more advanced ORM feature might be better here.
-    const current = await db.select({ isStarred: userProgress.isStarred }).from(userProgress).where(eq(userProgress.wordId, wordId));
+    const current = await db.select({ isStarred: userProgress.isStarred }).from(userProgress).where(and(eq(userProgress.userId, userId), eq(userProgress.wordId, wordId)));
     const isStarred = current[0]?.isStarred || false;
-    await db.insert(userProgress).values({ wordId, isStarred: !isStarred }).onConflictDoUpdate({ target: userProgress.wordId, set: { isStarred: !isStarred } });
+    await db.insert(userProgress).values({ userId, wordId, isStarred: !isStarred }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: { isStarred: !isStarred } });
   }
 
-  async addToVocabularyBook(wordId: string): Promise<void> {
-    await db.insert(userProgress).values({ wordId, isInVocabularyBook: true }).onConflictDoUpdate({ target: userProgress.wordId, set: { isInVocabularyBook: true } });
+  async addToVocabularyBook(userId: string, wordId: string): Promise<void> {
+    await db.insert(userProgress).values({ userId, wordId, isInVocabularyBook: true }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: { isInVocabularyBook: true } });
   }
 }

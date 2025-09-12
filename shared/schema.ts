@@ -74,6 +74,11 @@ export const studyPlans = pgTable("study_plans", {
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 
+export const signupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, { message: "Password must be at least 8 characters long" }),
+});
+
 export const insertWordSchema = createInsertSchema(words).omit({
   id: true,
 });
