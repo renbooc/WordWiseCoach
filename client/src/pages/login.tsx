@@ -55,11 +55,11 @@ export function LoginPage() {
             {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col">
-            <Button type="submit" className="w-full">Login</Button>
+            <Button type="submit" className="w-full">登录</Button>
             <p className="mt-4 text-xs text-center text-gray-700 dark:text-gray-400">
-              Don't have an account?{" "}
+              还没有账户？{" "}
               <a href="/signup" className="underline" onClick={(e) => { e.preventDefault(); setLocation("/signup"); }}>
-                Sign up
+                注册
               </a>
             </p>
           </CardFooter>
@@ -67,4 +67,7 @@ export function LoginPage() {
       </Card>
     </div>
   );
+}
+}
+
 }
