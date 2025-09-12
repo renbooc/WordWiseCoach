@@ -1,0 +1,118 @@
+import { sql } from "drizzle-orm";
+import { pgTable, text, varchar, integer, boolean, timestamp, real, jsonb } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+export const words = pgTable("words", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  word: text("word").notNull(),
+  phonetic: text("phonetic").notNull(),
+  partOfSpeech: text("part_of_speech").notNull(),
+  chineseDefinition: text("chinese_definition").notNull(),
+  englishExample: text("english_example").notNull(),
+  chineseExample: text("chinese_example").notNull(),
+  difficulty: integer("difficulty").notNull().default(1), // 1-5 scale
+  category: text("category").notNull().default("general"), // junior, senior, custom
+  frequency: integer("frequency").notNull().default(1), // usage frequency
+});
+
+export const userProgress = pgTable("user_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  wordId: varchar("word_id").notNull().references(() => words.id),
+  masteryLevel: integer("mastery_level").notNull().default(0), // 0-100
+  timesStudied: integer("times_studied").notNull().default(0),
+  timesCorrect: integer("times_correct").notNull().default(0),
+  lastStudied: timestamp("last_studied"),
+  nextReview: timestamp("next_review"),
+  isStarred: boolean("is_starred").notNull().default(false),
+  isInVocabularyBook: boolean("is_in_vocabulary_book").notNull().default(false),
+});
+
+export const studySessions = pgTable("study_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionType: text("session_type").notNull(), // study, practice, review
+  wordsLearned: integer("words_learned").notNull().default(0),
+  timeSpent: integer("time_spent").notNull().default(0), // in minutes
+  accuracy: real("accuracy").notNull().default(0), // 0-1
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const practiceResults = pgTable("practice_results", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => studySessions.id),
+  wordId: varchar("word_id").notNull().references(() => words.id),
+  exerciseType: text("exercise_type").notNull(), // multiple-choice, fill-blank, translation, listening
+  isCorrect: boolean("is_correct").notNull(),
+  userAnswer: text("user_answer"),
+  correctAnswer: text("correct_answer").notNull(),
+  timeSpent: integer("time_spent").notNull().default(0), // in seconds
+});
+
+export const studyPlans = pgTable("study_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  targetCategory: text("target_category").notNull(),
+  dailyWordCount: integer("daily_word_count").notNull().default(20),
+  studyDuration: integer("study_duration").notNull().default(30), // in minutes
+  reviewStrategy: text("review_strategy").notNull().default("spaced"), // spaced, regular, custom
+  studyFocus: jsonb("study_focus").notNull().default('["vocabulary", "spelling", "context"]'),
+  weeklySchedule: jsonb("weekly_schedule").notNull().default('[true, true, true, true, true, true, false]'),
+  isActive: boolean("is_active").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const insertWordSchema = createInsertSchema(words).omit({
+  id: true,
+});
+
+export const insertUserProgressSchema = createInsertSchema(userProgress).omit({
+  id: true,
+});
+
+export const insertStudySessionSchema = createInsertSchema(studySessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPracticeResultSchema = createInsertSchema(practiceResults).omit({
+  id: true,
+});
+
+export const insertStudyPlanSchema = createInsertSchema(studyPlans).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Word = typeof words.$inferSelect;
+export type UserProgress = typeof userProgress.$inferSelect;
+export type StudySession = typeof studySessions.$inferSelect;
+export type PracticeResult = typeof practiceResults.$inferSelect;
+export type StudyPlan = typeof studyPlans.$inferSelect;
+
+export type InsertWord = z.infer<typeof insertWordSchema>;
+export type InsertUserProgress = z.infer<typeof insertUserProgressSchema>;
+export type InsertStudySession = z.infer<typeof insertStudySessionSchema>;
+export type InsertPracticeResult = z.infer<typeof insertPracticeResultSchema>;
+export type InsertStudyPlan = z.infer<typeof insertStudyPlanSchema>;
+
+// Additional types for API responses
+export type WordWithProgress = Word & {
+  progress?: UserProgress;
+};
+
+export type DashboardStats = {
+  streakDays: number;
+  totalWordsLearned: number;
+  masteryRate: number;
+  todayStudyTime: number;
+  todayProgress: {
+    newWords: { current: number; target: number };
+    review: { current: number; target: number };
+    listening: { current: number; target: number };
+  };
+  reviewReminders: {
+    urgent: number;
+    regular: number;
+    consolidation: number;
+  };
+};

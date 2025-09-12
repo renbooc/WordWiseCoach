@@ -1,0 +1,402 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Search, Filter, Volume2, Edit, Star, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import type { WordWithProgress } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+
+type WordCategory = "all" | "junior" | "senior" | "vocabulary-book" | "starred" | "mastered";
+type SortOption = "alphabetical" | "date-added" | "mastery" | "review-time";
+
+export default function WordBank() {
+  const [selectedCategory, setSelectedCategory] = useState<WordCategory>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("alphabetical");
+  const [currentPage, setCurrentPage] = useState(1);
+  const wordsPerPage = 20;
+
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Fetch words based on category
+  const getWordsQuery = () => {
+    switch (selectedCategory) {
+      case "vocabulary-book":
+        return ["/api/vocabulary-book"];
+      case "starred":
+        return ["/api/starred-words"];
+      case "junior":
+        return ["/api/words", { category: "junior" }];
+      case "senior":
+        return ["/api/words", { category: "senior" }];
+      default:
+        return ["/api/words"];
+    }
+  };
+
+  const { data: allWords, isLoading } = useQuery<WordWithProgress[]>({
+    queryKey: getWordsQuery(),
+  });
+
+  const toggleStarMutation = useMutation({
+    mutationFn: async (wordId: string) => {
+      const response = await apiRequest("POST", `/api/words/${wordId}/star`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "标记状态已更新" });
+      queryClient.invalidateQueries({ queryKey: ["/api/words"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/starred-words"] });
+    },
+  });
+
+  const addToVocabularyMutation = useMutation({
+    mutationFn: async (wordId: string) => {
+      const response = await apiRequest("POST", `/api/words/${wordId}/add-to-vocabulary`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "已添加到生词本" });
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary-book"] });
+    },
+  });
+
+  // Filter and sort words
+  const filteredWords = allWords?.filter(word => {
+    const matchesSearch = searchQuery === "" || 
+      word.word.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      word.chineseDefinition.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesCategory = selectedCategory === "all" || 
+      (selectedCategory === "mastered" && (word.progress?.masteryLevel || 0) > 80) ||
+      (selectedCategory !== "mastered" && selectedCategory !== "vocabulary-book" && selectedCategory !== "starred");
+    
+    return matchesSearch && matchesCategory;
+  }) || [];
+
+  const sortedWords = [...filteredWords].sort((a, b) => {
+    switch (sortBy) {
+      case "alphabetical":
+        return a.word.localeCompare(b.word);
+      case "mastery":
+        return (b.progress?.masteryLevel || 0) - (a.progress?.masteryLevel || 0);
+      case "review-time":
+        if (!a.progress?.nextReview || !b.progress?.nextReview) return 0;
+        return new Date(a.progress.nextReview).getTime() - new Date(b.progress.nextReview).getTime();
+      default:
+        return 0;
+    }
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedWords.length / wordsPerPage);
+  const startIndex = (currentPage - 1) * wordsPerPage;
+  const paginatedWords = sortedWords.slice(startIndex, startIndex + wordsPerPage);
+
+  const playAudio = (word: string) => {
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(word);
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
+    }
+  };
+
+  const formatNextReview = (nextReview: Date | null | undefined) => {
+    if (!nextReview) return "未安排";
+    const now = new Date();
+    const review = new Date(nextReview);
+    const diffDays = Math.ceil((review.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return "需要复习";
+    if (diffDays === 0) return "今天";
+    if (diffDays === 1) return "明天";
+    return `${diffDays}天后`;
+  };
+
+  const getCategoryStats = () => {
+    if (!allWords) return {};
+    
+    return {
+      all: allWords.length,
+      junior: allWords.filter(w => w.category === "junior").length,
+      senior: allWords.filter(w => w.category === "senior").length,
+      "vocabulary-book": allWords.filter(w => w.progress?.isInVocabularyBook).length,
+      starred: allWords.filter(w => w.progress?.isStarred).length,
+      mastered: allWords.filter(w => (w.progress?.masteryLevel || 0) > 80).length,
+    };
+  };
+
+  const stats = getCategoryStats();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-foreground mb-2">单词库管理</h2>
+          <p className="text-muted-foreground">管理和组织你的单词集合</p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <Card className="animate-pulse">
+            <CardContent className="p-6 space-y-4">
+              <div className="h-6 bg-muted rounded"></div>
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-10 bg-muted rounded"></div>
+              ))}
+            </CardContent>
+          </Card>
+          <div className="lg:col-span-3">
+            <Card className="animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-96 bg-muted rounded"></div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold text-foreground mb-2">单词库管理</h2>
+        <p className="text-muted-foreground">管理和组织你的单词集合</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Word Bank Categories */}
+        <Card>
+          <CardHeader>
+            <CardTitle>单词库分类</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {[
+              { key: "all" as WordCategory, label: "全部单词", count: stats.all },
+              { key: "junior" as WordCategory, label: "初中词汇", count: stats.junior },
+              { key: "senior" as WordCategory, label: "高中词汇", count: stats.senior },
+              { key: "vocabulary-book" as WordCategory, label: "我的生词本", count: stats["vocabulary-book"] },
+              { key: "starred" as WordCategory, label: "重点词汇", count: stats.starred },
+              { key: "mastered" as WordCategory, label: "已掌握", count: stats.mastered },
+            ].map(category => (
+              <Button
+                key={category.key}
+                variant={selectedCategory === category.key ? "default" : "ghost"}
+                className="w-full justify-between"
+                onClick={() => {
+                  setSelectedCategory(category.key);
+                  setCurrentPage(1);
+                }}
+                data-testid={`button-category-${category.key}`}
+              >
+                <span>{category.label}</span>
+                <span className="text-sm" data-testid={`text-count-${category.key}`}>
+                  {category.count || 0}
+                </span>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Word List */}
+        <div className="lg:col-span-3">
+          <Card>
+            {/* Search and Filter */}
+            <CardHeader className="border-b border-border">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <Input
+                    placeholder="搜索单词..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-words"
+                  />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                </div>
+                <Select value={sortBy} onValueChange={(value: SortOption) => setSortBy(value)}>
+                  <SelectTrigger className="w-48" data-testid="select-sort-by">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="alphabetical">按字母排序</SelectItem>
+                    <SelectItem value="date-added">按添加时间</SelectItem>
+                    <SelectItem value="mastery">按掌握程度</SelectItem>
+                    <SelectItem value="review-time">按复习时间</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" data-testid="button-filter">
+                  <Filter className="mr-2 h-4 w-4" />
+                  筛选
+                </Button>
+              </div>
+            </CardHeader>
+
+            {/* Word List Table */}
+            <CardContent className="p-0">
+              {paginatedWords.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  {searchQuery ? "没有找到匹配的单词" : "此分类下暂无单词"}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left p-4 font-medium text-muted-foreground">单词</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">释义</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">词性</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">掌握程度</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">复习时间</th>
+                        <th className="text-left p-4 font-medium text-muted-foreground">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {paginatedWords.map((word) => (
+                        <tr key={word.id} className="hover:bg-muted/50 transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center space-x-3">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => playAudio(word.word)}
+                                data-testid={`button-play-${word.id}`}
+                              >
+                                <Volume2 className="h-4 w-4" />
+                              </Button>
+                              <div>
+                                <div className="font-medium text-card-foreground" data-testid={`text-word-${word.id}`}>
+                                  {word.word}
+                                </div>
+                                <div className="text-sm text-muted-foreground" data-testid={`text-phonetic-${word.id}`}>
+                                  {word.phonetic}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 text-card-foreground max-w-xs truncate" data-testid={`text-definition-${word.id}`}>
+                            {word.chineseDefinition}
+                          </td>
+                          <td className="p-4">
+                            <Badge variant="secondary" data-testid={`badge-pos-${word.id}`}>
+                              {word.partOfSpeech}
+                            </Badge>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-16 bg-muted rounded-full h-2">
+                                <div 
+                                  className="bg-chart-2 h-2 rounded-full transition-all" 
+                                  style={{ width: `${word.progress?.masteryLevel || 0}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-sm text-muted-foreground" data-testid={`text-mastery-${word.id}`}>
+                                {word.progress?.masteryLevel || 0}%
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground" data-testid={`text-review-${word.id}`}>
+                            {formatNextReview(word.progress?.nextReview)}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => addToVocabularyMutation.mutate(word.id)}
+                                data-testid={`button-edit-${word.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleStarMutation.mutate(word.id)}
+                                className={word.progress?.isStarred ? "text-chart-3" : ""}
+                                data-testid={`button-star-${word.id}`}
+                              >
+                                <Star className={`h-4 w-4 ${word.progress?.isStarred ? "fill-current" : ""}`} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                data-testid={`button-delete-${word.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="p-6 border-t border-border flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground" data-testid="text-pagination-info">
+                    显示第 {startIndex + 1}-{Math.min(startIndex + wordsPerPage, sortedWords.length)} 项，共 {sortedWords.length} 项
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage === 1}
+                      data-testid="button-prev-page"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    
+                    {[...Array(Math.min(5, totalPages))].map((_, index) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = index + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = index + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + index;
+                      } else {
+                        pageNum = currentPage - 2 + index;
+                      }
+
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          data-testid={`button-page-${pageNum}`}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                      disabled={currentPage === totalPages}
+                      data-testid="button-next-page"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
