@@ -1,4 +1,4 @@
-import { type Word, type UserProgress, type StudySession, type PracticeResult, type StudyPlan, type InsertWord, type InsertUserProgress, type InsertStudySession, type InsertPracticeResult, type InsertStudyPlan, type WordWithProgress, type DashboardStats } from "@shared/schema";
+import { type Word, type UserProgress, type StudySession, type PracticeResult, type StudyPlan, type InsertWord, type InsertUserProgress, type InsertStudySession, type InsertPracticeResult, type InsertStudyPlan, type WordWithProgress, type DashboardStats } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
