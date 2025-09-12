@@ -23,8 +23,8 @@ export default function WordCard({ word, onPlayAudio }: WordCardProps) {
   };
 
   return (
-    <div className="flip-card" onClick={handleFlip} data-testid="word-card">
-      <div className={`flip-card-inner ${isFlipped ? 'flipped' : ''}`}>
+    <div className={`flip-card ${isFlipped ? 'flipped' : ''}`} onClick={handleFlip} data-testid="word-card">
+      <div className="flip-card-inner">
         {/* Front of card */}
         <Card className="flip-card-front border border-border">
           <CardContent className="h-full flex flex-col justify-center items-center p-8">
