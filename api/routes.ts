@@ -2,10 +2,11 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage.js";
-import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertWordSchema } from "../shared/schema.js";
+import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertWordSchema, insertUserSchema } from "../shared/schema.js";
+import passport, { hashPassword } from './auth.js';
 
 // Configure multer for file uploads
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
@@ -39,7 +40,59 @@ function parseCSV(csvText: string): any[] {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Authentication routes
+  app.post('/api/auth/signup', async (req, res, next) => {
+    try {
+      const validation = insertUserSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ message: 'Invalid user data', errors: validation.error.issues });
+      }
+
+      const { email, password } = validation.data;
+
+      const existingUser = await storage.findUserByEmail(email);
+      if (existingUser) {
+        return res.status(409).json({ message: 'User with this email already exists.' });
+      }
+
+      const hashedPassword = await hashPassword(password);
+
+      const user = await storage.createUser({ email, hashedPassword });
+
+      req.login(user, (err) => {
+        if (err) return next(err);
+        res.status(201).json(user);
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/auth/login', passport.authenticate('local'), (req, res) => {
+    res.json(req.user);
+  });
+
+  app.post('/api/auth/logout', (req, res, next) => {
+    req.logout((err) => {
+      if (err) return next(err);
+      req.session.destroy((err) => {
+        if (err) return next(err);
+        res.clearCookie('connect.sid'); // Assuming the default session cookie name
+        res.status(200).json({ message: 'Logged out successfully' });
+      });
+    });
+  });
+
+  app.get('/api/auth/me', (req, res) => {
+    if (req.isAuthenticated()) {
+      res.json(req.user);
+    } else {
+      res.status(401).json({ message: 'Not authenticated' });
+    }
+  });
+
   // Words API
+
   app.get("/api/words", async (req, res) => {
     try {
       const { category, search } = req.query;

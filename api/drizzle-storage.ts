@@ -1,9 +1,25 @@
 import { db } from "./db.js";
-import { type Word, type UserProgress, type StudySession, type PracticeResult, type StudyPlan, type InsertWord, type InsertUserProgress, type InsertStudySession, type InsertPracticeResult, type InsertStudyPlan, type WordWithProgress, type DashboardStats, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
+import { type User, type Word, type UserProgress, type StudySession, type PracticeResult, type StudyPlan, type InsertUser, type InsertWord, type InsertUserProgress, type InsertStudySession, type InsertPracticeResult, type InsertStudyPlan, type WordWithProgress, type DashboardStats, users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
 import { IStorage } from "./storage.js";
 import { eq, and, lte, gte, asc, desc, sql } from "drizzle-orm";
 
 export class DrizzleStorage implements IStorage {
+  // User management
+  async findUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email));
+    return result[0];
+  }
+
+  async findUserById(id: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const result = await db.insert(users).values(user).returning();
+    return result[0];
+  }
+
   // Word management
   async getAllWords(): Promise<Word[]> {
     return await db.select().from(words);
