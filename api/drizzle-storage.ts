@@ -2,10 +2,11 @@ import { db } from "./db.js";
 import { users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
 import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
 import type { IStorage } from "./storage.js";
-import { eq, and, lte, gte, asc, desc, sql } from "drizzle-orm";
+import { eq, and, lte, gte, desc, sql } from "drizzle-orm";
 
 export class DrizzleStorage implements IStorage {
-  // User management
+
+  // ===== USER MANAGEMENT =====
   async findUserByEmail(email: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.email, email));
     return result[0];
@@ -21,7 +22,7 @@ export class DrizzleStorage implements IStorage {
     return result[0];
   }
 
-  // Word management
+  // ===== WORD MANAGEMENT =====
   async getAllWords(): Promise<Word[]> {
     return await db.select().from(words);
   }
@@ -44,74 +45,74 @@ export class DrizzleStorage implements IStorage {
     return result[0];
   }
   
-  // User progress
-  async getUserProgress(wordId: string): Promise<UserProgress | undefined> {
-    const result = await db.select().from(userProgress).where(eq(userProgress.wordId, wordId));
+  // ===== USER PROGRESS =====
+  async getUserProgress(userId: string, wordId: string): Promise<UserProgress | undefined> {
+    const result = await db.select().from(userProgress).where(and(eq(userProgress.userId, userId), eq(userProgress.wordId, wordId)));
     return result[0];
   }
 
-  async updateUserProgress(wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress> {
-    const result = await db.insert(userProgress).values({ wordId, ...progress }).onConflictDoUpdate({ target: userProgress.wordId, set: progress }).returning();
+  async updateUserProgress(userId: string, wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress> {
+    const result = await db.insert(userProgress).values({ userId, wordId, ...progress }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: progress }).returning();
     return result[0];
   }
 
-  async getWordsForReview(): Promise<WordWithProgress[]> {
+  async getWordsForReview(userId: string): Promise<WordWithProgress[]> {
     const now = new Date();
-    const results = await db.select().from(words)
-      .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(lte(userProgress.nextReview, now));
+    const results = await db.select().from(userProgress)
+      .where(and(eq(userProgress.userId, userId), lte(userProgress.nextReview, now)))
+      .leftJoin(words, eq(userProgress.wordId, words.id));
     
-    return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
+    return results.map(r => ({ ...r.words!, progress: r.user_progress }));
   }
 
-  async getWordsByMasteryLevel(minLevel: number, maxLevel: number): Promise<WordWithProgress[]> {
-    const results = await db.select().from(words)
-      .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(and(gte(userProgress.masteryLevel, minLevel), lte(userProgress.masteryLevel, maxLevel)));
+  async getWordsByMasteryLevel(userId: string, minLevel: number, maxLevel: number): Promise<WordWithProgress[]> {
+    const results = await db.select().from(userProgress)
+      .where(and(eq(userProgress.userId, userId), gte(userProgress.masteryLevel, minLevel), lte(userProgress.masteryLevel, maxLevel)))
+      .leftJoin(words, eq(userProgress.wordId, words.id));
 
-    return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
+    return results.map(r => ({ ...r.words!, progress: r.user_progress }));
   }
   
-  // Study sessions
+  // ===== STUDY SESSIONS =====
   async createStudySession(session: InsertStudySession): Promise<StudySession> {
     const result = await db.insert(studySessions).values(session).returning();
     return result[0];
   }
 
-  async getRecentStudySessions(limit: number): Promise<StudySession[]> {
-    return await db.select().from(studySessions).orderBy(desc(studySessions.createdAt)).limit(limit);
+  async getRecentStudySessions(userId: string, limit: number): Promise<StudySession[]> {
+    return await db.select().from(studySessions).where(eq(studySessions.userId, userId)).orderBy(desc(studySessions.createdAt)).limit(limit);
   }
   
-  // Practice results
+  // ===== PRACTICE RESULTS =====
   async savePracticeResult(result: InsertPracticeResult): Promise<PracticeResult> {
     const res = await db.insert(practiceResults).values(result).returning();
     return res[0];
   }
 
-  async getPracticeHistory(wordId: string): Promise<PracticeResult[]> {
-    return await db.select().from(practiceResults).where(eq(practiceResults.wordId, wordId)).orderBy(desc(practiceResults.id));
+  async getPracticeHistory(userId: string, wordId: string): Promise<PracticeResult[]> {
+    return await db.select().from(practiceResults).where(and(eq(practiceResults.userId, userId), eq(practiceResults.wordId, wordId))).orderBy(desc(practiceResults.id));
   }
   
-  // Study plans
+  // ===== STUDY PLANS =====
   async createStudyPlan(plan: InsertStudyPlan): Promise<StudyPlan> {
     const result = await db.insert(studyPlans).values(plan).returning();
     return result[0];
   }
 
-  async getActiveStudyPlan(): Promise<StudyPlan | undefined> {
-    const result = await db.select().from(studyPlans).where(eq(studyPlans.isActive, true));
+  async getActiveStudyPlan(userId: string): Promise<StudyPlan | undefined> {
+    const result = await db.select().from(studyPlans).where(and(eq(studyPlans.userId, userId), eq(studyPlans.isActive, true)));
     return result[0];
   }
 
-  async updateStudyPlan(id: string, updates: Partial<InsertStudyPlan>): Promise<StudyPlan> {
-    const result = await db.update(studyPlans).set(updates).where(eq(studyPlans.id, id)).returning();
+  async updateStudyPlan(userId: string, id: string, updates: Partial<InsertStudyPlan>): Promise<StudyPlan> {
+    const result = await db.update(studyPlans).set(updates).where(and(eq(studyPlans.userId, userId), eq(studyPlans.id, id))).returning();
     return result[0];
   }
   
-  // Dashboard
-  async getDashboardStats(): Promise<DashboardStats> {
-    // This is a complex query and might be better implemented with raw SQL or multiple queries for performance.
-    // For now, we will return mock data.
+  // ===== DASHBOARD =====
+  async getDashboardStats(userId: string): Promise<DashboardStats> {
+    // This is a complex query. For now, we will return mock data.
+    console.log(`Fetching dashboard stats for user: ${userId}`);
     return {
       streakDays: 0,
       totalWordsLearned: 0,
@@ -126,24 +127,22 @@ export class DrizzleStorage implements IStorage {
     };
   }
   
-  // Word collections
+  // ===== WORD COLLECTIONS =====
   async getVocabularyBook(userId: string): Promise<WordWithProgress[]> {
-    const results = await db.select().from(words)
-      .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(and(eq(userProgress.userId, userId), eq(userProgress.isInVocabularyBook, true)));
-    return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
+    const results = await db.select().from(userProgress)
+      .where(and(eq(userProgress.userId, userId), eq(userProgress.isInVocabularyBook, true)))
+      .leftJoin(words, eq(userProgress.wordId, words.id));
+    return results.map(r => ({ ...r.words!, progress: r.user_progress }));
   }
 
   async getStarredWords(userId: string): Promise<WordWithProgress[]> {
-    const results = await db.select().from(words)
-      .leftJoin(userProgress, eq(words.id, userProgress.wordId))
-      .where(and(eq(userProgress.userId, userId), eq(userProgress.isStarred, true)));
-    return results.map(r => ({ ...r.words, progress: r.user_progress || undefined }));
+    const results = await db.select().from(userProgress)
+      .where(and(eq(userProgress.userId, userId), eq(userProgress.isStarred, true)))
+      .leftJoin(words, eq(userProgress.wordId, words.id));
+    return results.map(r => ({ ...r.words!, progress: r.user_progress }));
   }
 
   async toggleWordStar(userId: string, wordId: string): Promise<void> {
-    // This requires fetching first, then updating, which can be prone to race conditions.
-    // A raw SQL query or a more advanced ORM feature might be better here.
     const current = await db.select({ isStarred: userProgress.isStarred }).from(userProgress).where(and(eq(userProgress.userId, userId), eq(userProgress.wordId, wordId)));
     const isStarred = current[0]?.isStarred || false;
     await db.insert(userProgress).values({ userId, wordId, isStarred: !isStarred }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: { isStarred: !isStarred } });

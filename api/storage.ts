@@ -1,6 +1,9 @@
-import { DrizzleStorage } from "./drizzle-storage.js";
+import type { DrizzleStorage } from "./drizzle-storage.js";
 import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
 
+// All type imports are used here to define the interface for our storage layer.
+// This ensures that both MemStorage (for testing) and DrizzleStorage (for production)
+// have the same methods.
 export interface IStorage {
   // User management
   findUserByEmail(email: string): Promise<User | undefined>;
@@ -15,26 +18,26 @@ export interface IStorage {
   createWord(word: InsertWord): Promise<Word>;
   
   // User progress
-  getUserProgress(wordId: string): Promise<UserProgress | undefined>;
-  updateUserProgress(wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress>;
-  getWordsForReview(): Promise<WordWithProgress[]>;
-  getWordsByMasteryLevel(minLevel: number, maxLevel: number): Promise<WordWithProgress[]>;
+  getUserProgress(userId: string, wordId: string): Promise<UserProgress | undefined>;
+  updateUserProgress(userId: string, wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress>;
+  getWordsForReview(userId: string): Promise<WordWithProgress[]>;
+  getWordsByMasteryLevel(userId: string, minLevel: number, maxLevel: number): Promise<WordWithProgress[]>;
   
   // Study sessions
   createStudySession(session: InsertStudySession): Promise<StudySession>;
-  getRecentStudySessions(limit: number): Promise<StudySession[]>;
+  getRecentStudySessions(userId: string, limit: number): Promise<StudySession[]>;
   
   // Practice results
   savePracticeResult(result: InsertPracticeResult): Promise<PracticeResult>;
-  getPracticeHistory(wordId: string): Promise<PracticeResult[]>;
+  getPracticeHistory(userId: string, wordId: string): Promise<PracticeResult[]>;
   
   // Study plans
   createStudyPlan(plan: InsertStudyPlan): Promise<StudyPlan>;
-  getActiveStudyPlan(): Promise<StudyPlan | undefined>;
-  updateStudyPlan(id: string, updates: Partial<InsertStudyPlan>): Promise<StudyPlan>;
+  getActiveStudyPlan(userId: string): Promise<StudyPlan | undefined>;
+  updateStudyPlan(userId: string, id: string, updates: Partial<InsertStudyPlan>): Promise<StudyPlan>;
   
   // Dashboard
-  getDashboardStats(): Promise<DashboardStats>;
+  getDashboardStats(userId: string): Promise<DashboardStats>;
   
   // Word collections
   getVocabularyBook(userId: string): Promise<WordWithProgress[]>;
@@ -43,5 +46,6 @@ export interface IStorage {
   addToVocabularyBook(userId: string, wordId: string): Promise<void>;
 }
 
-// Export an instance of the DrizzleStorage to be used by the application
-export const storage = new DrizzleStorage();
+// We are declaring a global instance of our storage, but initializing it elsewhere.
+// This allows the storage implementation to be swapped easily.
+export declare const storage: IStorage;
