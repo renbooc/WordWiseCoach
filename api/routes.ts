@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
-import { storage } from "./storage";
+import { storage } from "./storage.js";
 import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertWordSchema } from "@shared/schema";
 
 // Configure multer for file uploads
