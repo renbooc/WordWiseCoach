@@ -16,7 +16,7 @@ export function SignupPage() {
     setError("");
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+      setError("密码长度至少为8个字符。");
       return;
     }
 
@@ -43,13 +43,13 @@ export function SignupPage() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
-          <CardDescription>Enter your email and password to get started</CardDescription>
+          <CardTitle className="text-2xl font-bold">创建账户</CardTitle>
+          <CardDescription>输入您的邮箱和密码以开始</CardDescription>
         </CardHeader>
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">邮箱</Label>
               <Input id="email" type="email" placeholder="m@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-2">
@@ -59,11 +59,11 @@ export function SignupPage() {
             {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col">
-            <Button type="submit" className="w-full">Create Account</Button>
+            <Button type="submit" className="w-full">创建账户</Button>
             <p className="mt-4 text-xs text-center text-gray-700 dark:text-gray-400">
-              Already have an account?{" "}
+              已经有账户了？{" "}
               <a href="/login" className="underline" onClick={(e) => { e.preventDefault(); setLocation("/login"); }}>
-                Login
+                登录
               </a>
             </p>
           </CardFooter>
@@ -71,6 +71,4 @@ export function SignupPage() {
       </Card>
     </div>
   );
-}
-
 }
