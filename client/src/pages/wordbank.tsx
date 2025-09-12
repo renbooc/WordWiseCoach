@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Filter, Volume2, Edit, Star, Trash2, ChevronLeft, ChevronRight, Plus, BookPlus } from "lucide-react";
+import { Search, Filter, Volume2, Edit, Star, Trash2, ChevronLeft, ChevronRight, Plus, BookPlus, Upload, FileText, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { WordWithProgress } from "@shared/schema";
 import { insertWordSchema } from "@shared/schema";
@@ -32,6 +32,9 @@ export default function WordBank() {
   const [sortBy, setSortBy] = useState<SortOption>("alphabetical");
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddWordDialog, setShowAddWordDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importProgress, setImportProgress] = useState({ processed: 0, total: 0, errors: [] as string[] });
   const wordsPerPage = 20;
 
   const { toast } = useToast();
@@ -118,6 +121,92 @@ export default function WordBank() {
 
   const onSubmitWord = (data: z.infer<typeof addWordSchema>) => {
     createWordMutation.mutate(data);
+  };
+
+  const importWordsMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await apiRequest("POST", `/api/words/import`, formData);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({ 
+        title: "导入完成！", 
+        description: `成功导入 ${data.success} 个单词，${data.failed} 个失败。` 
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/words"] });
+      setShowImportDialog(false);
+      setImportFile(null);
+      setImportProgress({ processed: 0, total: 0, errors: [] });
+    },
+    onError: (error) => {
+      toast({ 
+        title: "导入失败", 
+        description: "文件导入时出现错误，请检查文件格式。", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleFileImport = () => {
+    if (!importFile) return;
+    
+    const formData = new FormData();
+    formData.append('file', importFile);
+    importWordsMutation.mutate(formData);
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && (file.type === 'text/csv' || file.type === 'application/json' || file.name.endsWith('.csv') || file.name.endsWith('.json'))) {
+      setImportFile(file);
+    } else {
+      toast({
+        title: "文件格式错误",
+        description: "请选择CSV或JSON格式的文件。",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const downloadTemplate = (format: 'csv' | 'json') => {
+    const sampleData = format === 'csv' 
+      ? `word,phonetic,partOfSpeech,chineseDefinition,englishExample,chineseExample,difficulty,category,frequency
+beautiful,/ˈbjuːtɪfʊl/,adjective,美丽的；漂亮的,She is a beautiful girl.,她是一个漂亮的女孩。,2,junior,5
+excellent,/ˈeksələnt/,adjective,优秀的；杰出的,He did an excellent job.,他做得很出色。,3,senior,4`
+      : JSON.stringify([
+          {
+            word: "beautiful",
+            phonetic: "/ˈbjuːtɪfʊl/",
+            partOfSpeech: "adjective",
+            chineseDefinition: "美丽的；漂亮的",
+            englishExample: "She is a beautiful girl.",
+            chineseExample: "她是一个漂亮的女孩。",
+            difficulty: 2,
+            category: "junior",
+            frequency: 5
+          },
+          {
+            word: "excellent",
+            phonetic: "/ˈeksələnt/",
+            partOfSpeech: "adjective", 
+            chineseDefinition: "优秀的；杰出的",
+            englishExample: "He did an excellent job.",
+            chineseExample: "他做得很出色。",
+            difficulty: 3,
+            category: "senior",
+            frequency: 4
+          }
+        ], null, 2);
+
+    const blob = new Blob([sampleData], { type: format === 'csv' ? 'text/csv' : 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `word_template.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Filter and sort words
@@ -223,13 +312,14 @@ export default function WordBank() {
             <h2 className="text-3xl font-bold text-foreground mb-2">单词库管理</h2>
             <p className="text-muted-foreground">管理和组织你的单词集合</p>
           </div>
-          <Dialog open={showAddWordDialog} onOpenChange={setShowAddWordDialog}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-word" className="learning-card-gradient text-white">
-                <Plus className="mr-2 h-4 w-4" />
-                录入单词
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-3">
+            <Dialog open={showAddWordDialog} onOpenChange={setShowAddWordDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-word" className="learning-card-gradient text-white">
+                  <Plus className="mr-2 h-4 w-4" />
+                  录入单词
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold">手工录入单词</DialogTitle>
@@ -422,7 +512,99 @@ export default function WordBank() {
                 </form>
               </Form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+
+            <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" data-testid="button-import-words">
+                  <Upload className="mr-2 h-4 w-4" />
+                  批量导入
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold">批量导入单词</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      支持CSV和JSON格式文件。请先下载模板文件，按照格式填写单词数据。
+                    </p>
+                    
+                    <div className="flex gap-2 mb-4">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => downloadTemplate('csv')}
+                        data-testid="button-download-csv-template"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        CSV模板
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => downloadTemplate('json')}
+                        data-testid="button-download-json-template"
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        JSON模板
+                      </Button>
+                    </div>
+
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                      <input
+                        type="file"
+                        accept=".csv,.json"
+                        onChange={handleFileChange}
+                        className="hidden"
+                        id="file-upload"
+                        data-testid="input-file-upload"
+                      />
+                      <label htmlFor="file-upload" className="cursor-pointer">
+                        <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                        <p className="text-sm text-muted-foreground">
+                          点击选择文件或拖拽文件到此处
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          支持 CSV、JSON 格式
+                        </p>
+                      </label>
+                    </div>
+
+                    {importFile && (
+                      <div className="mt-4 p-3 bg-muted rounded-lg">
+                        <p className="text-sm font-medium">已选择文件:</p>
+                        <p className="text-sm text-muted-foreground" data-testid="text-selected-file">
+                          {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end space-x-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setShowImportDialog(false);
+                        setImportFile(null);
+                      }}
+                      data-testid="button-cancel-import"
+                    >
+                      取消
+                    </Button>
+                    <Button 
+                      onClick={handleFileImport}
+                      disabled={!importFile || importWordsMutation.isPending}
+                      data-testid="button-submit-import"
+                    >
+                      {importWordsMutation.isPending ? "导入中..." : "开始导入"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </div>
 

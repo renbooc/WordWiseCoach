@@ -1,7 +1,42 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
 import { storage } from "./storage";
 import { insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertWordSchema } from "@shared/schema";
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+function parseCSV(csvText: string): any[] {
+  const lines = csvText.trim().split('\n');
+  if (lines.length < 2) return [];
+  
+  const headers = lines[0].split(',').map(h => h.trim());
+  const data = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const obj: any = {};
+    
+    headers.forEach((header, index) => {
+      const value = values[index] || '';
+      if (header === 'difficulty' || header === 'frequency') {
+        obj[header] = parseInt(value) || 1;
+      } else {
+        obj[header] = value;
+      }
+    });
+    
+    if (obj.word && obj.phonetic && obj.partOfSpeech && obj.chineseDefinition) {
+      data.push(obj);
+    }
+  }
+  
+  return data;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Words API
@@ -42,6 +77,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating word:", error);
       res.status(500).json({ message: "Failed to create word" });
+    }
+  });
+
+  app.post("/api/words/import", upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileContent = req.file.buffer.toString('utf-8');
+      const fileName = req.file.originalname.toLowerCase();
+      
+      let wordsData: any[] = [];
+      
+      if (fileName.endsWith('.csv')) {
+        wordsData = parseCSV(fileContent);
+      } else if (fileName.endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(fileContent);
+          wordsData = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) {
+          return res.status(400).json({ message: "Invalid JSON format" });
+        }
+      } else {
+        return res.status(400).json({ message: "Unsupported file format" });
+      }
+
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
+
+      for (const wordData of wordsData) {
+        try {
+          const result = insertWordSchema.safeParse(wordData);
+          if (result.success) {
+            await storage.createWord(result.data);
+            successCount++;
+          } else {
+            failedCount++;
+            errors.push(`Word "${wordData.word || 'unknown'}": ${result.error.issues.map(i => i.message).join(', ')}`);
+          }
+        } catch (error) {
+          failedCount++;
+          errors.push(`Word "${wordData.word || 'unknown'}": Failed to create`);
+        }
+      }
+
+      res.json({
+        success: successCount,
+        failed: failedCount,
+        total: wordsData.length,
+        errors: errors.slice(0, 10) // Return first 10 errors only
+      });
+
+    } catch (error) {
+      console.error("Import error:", error);
+      res.status(500).json({ message: "Failed to import words" });
     }
   });
 
