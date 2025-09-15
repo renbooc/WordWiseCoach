@@ -2,7 +2,7 @@ import { db } from "./db.js";
 import { users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
 import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
 import type { IStorage } from "./storage.js";
-import { eq, and, lte, gte, desc, sql } from "drizzle-orm";
+import { eq, and, lte, gte, desc, sql, countDistinct, sum } from "drizzle-orm";
 
 export class DrizzleStorage implements IStorage {
 
@@ -52,8 +52,14 @@ export class DrizzleStorage implements IStorage {
   }
 
   async updateUserProgress(userId: string, wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress> {
-    const result = await db.insert(userProgress).values({ userId, wordId, ...progress }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: progress }).returning();
-    return result[0];
+    const existing = await this.getUserProgress(userId, wordId);
+    if (existing) {
+      const result = await db.update(userProgress).set(progress).where(eq(userProgress.id, existing.id)).returning();
+      return result[0];
+    } else {
+      const result = await db.insert(userProgress).values({ userId, wordId, ...progress }).returning();
+      return result[0];
+    }
   }
 
   async getWordsForReview(userId: string): Promise<WordWithProgress[]> {
@@ -87,7 +93,7 @@ export class DrizzleStorage implements IStorage {
   }
   
   // ===== STUDY SESSIONS =====
-  async createStudySession(session: InsertStudySession): Promise<StudySession> {
+  async createStudySession(session: InsertStudySession & { userId: string }): Promise<StudySession> {
     const result = await db.insert(studySessions).values(session).returning();
     return result[0];
   }
@@ -124,13 +130,69 @@ export class DrizzleStorage implements IStorage {
   
   // ===== DASHBOARD =====
   async getDashboardStats(userId: string): Promise<DashboardStats> {
-    // This is a complex query. For now, we will return mock data.
-    console.log(`Fetching dashboard stats for user: ${userId}`);
+    console.log(`Fetching real dashboard stats for user: ${userId}`);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. Total words learned
+    const totalWordsResult = await db.select({ count: countDistinct(userProgress.wordId) })
+      .from(userProgress)
+      .where(eq(userProgress.userId, userId));
+    const totalWordsLearned = totalWordsResult[0]?.count || 0;
+
+    // 2. Today's study time
+    const todayTimeResult = await db.select({ total: sum(studySessions.timeSpent) })
+      .from(studySessions)
+      .where(and(eq(studySessions.userId, userId), gte(studySessions.createdAt, today)));
+    const todayStudyTime = Math.round((Number(todayTimeResult[0]?.total) || 0) / 60);
+
+    // 3. Mastery Rate
+    const progressStats = await db.select({
+        totalStudied: sum(userProgress.timesStudied),
+        totalCorrect: sum(userProgress.timesCorrect)
+      })
+      .from(userProgress)
+      .where(eq(userProgress.userId, userId));
+    
+    const totalStudied = Number(progressStats[0]?.totalStudied) || 0;
+    const totalCorrect = Number(progressStats[0]?.totalCorrect) || 0;
+    const masteryRate = totalStudied > 0 ? Math.round((totalCorrect / totalStudied) * 100) : 0;
+
+    // 4. Streak Days (a more complex query)
+    const sessionDatesResult = await db.selectDistinct({ date: sql<string>`DATE(${studySessions.createdAt})` })
+      .from(studySessions)
+      .where(eq(studySessions.userId, userId))
+      .orderBy(desc(sql<string>`DATE(${studySessions.createdAt})`));
+
+    let streakDays = 0;
+    if (sessionDatesResult.length > 0) {
+        let currentDate = new Date();
+        let lastDate = new Date(sessionDatesResult[0].date);
+        
+        // Check if today or yesterday is the last study day
+        if (Math.abs(currentDate.getTime() - lastDate.getTime()) / (1000 * 3600 * 24) <= 1) {
+            streakDays = 1;
+            for (let i = 1; i < sessionDatesResult.length; i++) {
+                const prevDate = new Date(sessionDatesResult[i].date);
+                const diffDays = (lastDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24);
+                if (diffDays === 1) {
+                    streakDays++;
+                    lastDate = prevDate;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // For todayProgress and reviewReminders, we will return mock data for now
+    // as their calculation is also complex.
     return {
-      streakDays: 0,
-      totalWordsLearned: 0,
-      masteryRate: 0,
-      todayStudyTime: 0,
+      streakDays,
+      totalWordsLearned,
+      masteryRate,
+      todayStudyTime,
       todayProgress: {
         newWords: { current: 0, target: 10 },
         review: { current: 0, target: 15 },
@@ -156,12 +218,12 @@ export class DrizzleStorage implements IStorage {
   }
 
   async toggleWordStar(userId: string, wordId: string): Promise<void> {
-    const current = await db.select({ isStarred: userProgress.isStarred }).from(userProgress).where(and(eq(userProgress.userId, userId), eq(userProgress.wordId, wordId)));
-    const isStarred = current[0]?.isStarred || false;
-    await db.insert(userProgress).values({ userId, wordId, isStarred: !isStarred }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: { isStarred: !isStarred } });
+    const existing = await this.getUserProgress(userId, wordId);
+    const isStarred = existing?.isStarred || false;
+    await this.updateUserProgress(userId, wordId, { isStarred: !isStarred });
   }
 
   async addToVocabularyBook(userId: string, wordId: string): Promise<void> {
-    await db.insert(userProgress).values({ userId, wordId, isInVocabularyBook: true }).onConflictDoUpdate({ target: [userProgress.userId, userProgress.wordId], set: { isInVocabularyBook: true } });
+    await this.updateUserProgress(userId, wordId, { isInVocabularyBook: true });
   }
 }

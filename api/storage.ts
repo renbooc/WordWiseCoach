@@ -25,7 +25,7 @@ export interface IStorage {
   getNewWordsForPlan(userId: string, category: string, limit: number): Promise<Word[]>;
   
   // Study sessions
-  createStudySession(session: InsertStudySession): Promise<StudySession>;
+  createStudySession(session: InsertStudySession & { userId: string }): Promise<StudySession>;
   getRecentStudySessions(userId: string, limit: number): Promise<StudySession[]>;
   
   // Practice results
