@@ -1,107 +1,92 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Volume2, Plus, Bookmark, Share2, X, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { WordWithProgress } from "@shared/schema";
-import WordCard from "@/components/word-card.tsx";
+import type { WordWithProgress, UserProgress } from "@shared/schema";
+import WordCard from "@/components/word-card";
 import { apiRequest } from "@/lib/queryClient";
+import { SpacedRepetitionScheduler, ReviewResult, ReviewSchedule } from "@/lib/spaced-repetition";
+
+// Shuffles an array in place and returns it
+function shuffle<T>(array: T[]): T[] {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
 
 export default function Study() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [sessionWords, setSessionWords] = useState<WordWithProgress[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: words, isLoading } = useQuery<WordWithProgress[]>({
-    queryKey: ["/api/words"],
-    select: (data) => data.slice(0, 20), // Limit to 20 words for study session
+  const { data: reviewWords, isLoading: isLoadingReview } = useQuery<WordWithProgress[]>({
+    queryKey: ["/api/words-for-review"],
+    queryFn: () => apiRequest("GET", "/api/words-for-review").then(res => res.json()),
   });
+
+  const { data: newWords, isLoading: isLoadingNew } = useQuery<WordWithProgress[]>({
+    queryKey: ["/api/new-words-for-plan"],
+    queryFn: () => apiRequest("GET", "/api/new-words-for-plan").then(res => res.json()),
+  });
+
+  useEffect(() => {
+    if (reviewWords && newWords) {
+      const combined = [...reviewWords, ...newWords];
+      setSessionWords(shuffle(combined));
+      setCurrentWordIndex(0);
+    }
+  }, [reviewWords, newWords]);
 
   const updateProgressMutation = useMutation({
-    mutationFn: async ({ wordId, updates }: { wordId: string; updates: any }) => {
-      const response = await apiRequest("POST", `/api/progress/${wordId}`, updates);
-      return response.json();
+    mutationFn: async ({ wordId, updates }: { wordId: string; updates: Partial<UserProgress> }) => {
+      return apiRequest("POST", `/api/progress/${wordId}`, updates);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/words"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/words-for-review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/new-words-for-plan"] });
     },
   });
 
-  const addToVocabularyMutation = useMutation({
-    mutationFn: async (wordId: string) => {
-      const response = await apiRequest("POST", `/api/words/${wordId}/add-to-vocabulary`);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({ title: "已添加到生词本", description: "单词已成功添加到生词本" });
-      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary-book"] });
-    },
-  });
+  const handleFeedback = (isCorrect: boolean) => {
+    const currentWord = sessionWords[currentWordIndex];
+    if (!currentWord) return;
 
-  const toggleStarMutation = useMutation({
-    mutationFn: async (wordId: string) => {
-      const response = await apiRequest("POST", `/api/words/${wordId}/star`);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({ title: "标记状态已更新", description: "单词标记状态已更新" });
-      queryClient.invalidateQueries({ queryKey: ["/api/words"] });
-    },
-  });
+    const quality = isCorrect ? 5 : 1; // 5 for correct, 1 for incorrect
+    const reviewResult: ReviewResult = { quality, isCorrect };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">记单词</h2>
-          <p className="text-muted-foreground">通过单词卡片学习新单词</p>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <Card className="animate-pulse">
-              <CardContent className="h-96 flex items-center justify-center">
-                <div className="w-32 h-32 bg-muted rounded-full"></div>
-              </CardContent>
-            </Card>
-          </div>
-          <div className="space-y-6">
-            {[...Array(3)].map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <CardContent className="p-6">
-                  <div className="h-6 bg-muted rounded mb-4"></div>
-                  <div className="h-4 bg-muted rounded"></div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+    const currentSchedule: ReviewSchedule | null = currentWord.progress ? {
+        interval: currentWord.progress.interval,
+        easeFactor: currentWord.progress.easeFactor,
+        repetitions: currentWord.progress.repetitions,
+        nextReviewDate: new Date(currentWord.progress.nextReview || Date.now()),
+    } : null;
 
-  if (!words || words.length === 0) {
-    return (
-      <div className="space-y-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">记单词</h2>
-          <p className="text-muted-foreground">通过单词卡片学习新单词</p>
-        </div>
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-muted-foreground">暂无单词可学习</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+    const newSchedule = SpacedRepetitionScheduler.calculateNextReview(currentSchedule, reviewResult);
 
-  const currentWord = words[currentWordIndex];
-  const progress = (currentWordIndex + 1) / words.length * 100;
+    const updates: Partial<UserProgress> = {
+        ...newSchedule,
+        nextReview: newSchedule.nextReviewDate.toISOString(),
+        lastStudied: new Date().toISOString(),
+        timesStudied: (currentWord.progress?.timesStudied || 0) + 1,
+        timesCorrect: (currentWord.progress?.timesCorrect || 0) + (isCorrect ? 1 : 0),
+    };
+
+    updateProgressMutation.mutate({ wordId: currentWord.id, updates });
+    toast({ title: isCorrect ? "我认识" : "我忘了", description: isCorrect ? `下次复习: ${newSchedule.interval}天后` : "已加入稍后复习" });
+    nextWord();
+  };
 
   const nextWord = () => {
-    if (currentWordIndex < words.length - 1) {
+    if (currentWordIndex < sessionWords.length - 1) {
       setCurrentWordIndex(currentWordIndex + 1);
+    } else {
+        toast({ title: "本轮学习完成!", description: "所有单词已学习/复习完毕。" });
+        // Optionally, navigate away or show a summary
     }
   };
 
@@ -111,192 +96,45 @@ export default function Study() {
     }
   };
 
-  const markKnown = () => {
-    updateProgressMutation.mutate({
-      wordId: currentWord.id,
-      updates: {
-        masteryLevel: Math.min(100, (currentWord.progress?.masteryLevel || 0) + 20),
-        timesStudied: (currentWord.progress?.timesStudied || 0) + 1,
-        timesCorrect: (currentWord.progress?.timesCorrect || 0) + 1,
-        lastStudied: new Date(),
-      },
-    });
-    toast({ title: "标记为已掌握", description: "单词掌握度已提升" });
-    nextWord();
-  };
+  const isLoading = isLoadingReview || isLoadingNew;
 
-  const markDifficult = () => {
-    updateProgressMutation.mutate({
-      wordId: currentWord.id,
-      updates: {
-        masteryLevel: Math.max(0, (currentWord.progress?.masteryLevel || 0) - 10),
-        timesStudied: (currentWord.progress?.timesStudied || 0) + 1,
-        lastStudied: new Date(),
-      },
-    });
-    toast({ title: "标记为困难", description: "将安排更多复习" });
-    nextWord();
-  };
+  if (isLoading) {
+    return <div className="text-center py-16">正在为你准备学习卡片...</div>;
+  }
 
-  const playAudio = () => {
-    // In a real app, this would use the Web Speech API or audio files
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(currentWord.word);
-      utterance.lang = 'en-US';
-      speechSynthesis.speak(utterance);
-    }
-  };
+  if (!sessionWords || sessionWords.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <h2 className="text-2xl font-bold text-foreground mb-4">今日学习已完成！</h2>
+        <p className="text-muted-foreground mb-6">没有新的或需要复习的单词了，休息一下吧！</p>
+        <Button onClick={() => window.location.href = "/dashboard"}>返回仪表盘</Button>
+      </div>
+    );
+  }
+
+  const currentWord = sessionWords[currentWordIndex];
 
   return (
     <div className="space-y-8">
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-foreground mb-2">记单词</h2>
-        <p className="text-muted-foreground">通过单词卡片学习新单词</p>
+        <p className="text-muted-foreground">今日还剩 {sessionWords.length - currentWordIndex -1} 个单词需要学习/复习</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Word Card */}
         <div className="lg:col-span-2">
-          <WordCard word={currentWord} onPlayAudio={playAudio} />
-
-          {/* Word Navigation */}
+          <WordCard word={currentWord} onPlayAudio={() => {}} />
           <div className="flex justify-between items-center mt-6">
-            <Button 
-              variant="outline" 
-              onClick={previousWord} 
-              disabled={currentWordIndex === 0}
-              data-testid="button-previous-word"
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" />
-              上一个
-            </Button>
-            
+            <Button variant="outline" onClick={previousWord} disabled={currentWordIndex === 0}>上一个</Button>
             <div className="flex space-x-4">
-              <Button 
-                variant="destructive" 
-                size="icon" 
-                onClick={markDifficult}
-                data-testid="button-mark-difficult"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <Button 
-                className="bg-chart-2 hover:bg-chart-2/90 text-white" 
-                size="icon" 
-                onClick={markKnown}
-                data-testid="button-mark-known"
-              >
-                <Check className="h-4 w-4" />
-              </Button>
+              <Button variant="destructive" size="lg" onClick={() => handleFeedback(false)}><X className="mr-2 h-4 w-4" />我忘了</Button>
+              <Button className="bg-green-500 hover:bg-green-600 text-white" size="lg" onClick={() => handleFeedback(true)}><Check className="mr-2 h-4 w-4" />我认识</Button>
             </div>
-            
-            <Button 
-              variant="default" 
-              onClick={nextWord} 
-              disabled={currentWordIndex === words.length - 1}
-              data-testid="button-next-word"
-            >
-              下一个
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
+            <Button variant="outline" onClick={nextWord} disabled={currentWordIndex >= sessionWords.length - 1}>下一个</Button>
           </div>
         </div>
-
-        {/* Study Sidebar */}
         <div className="space-y-6">
-          {/* Progress Card */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold text-card-foreground mb-4">学习进度</h3>
-              <div className="relative mb-4">
-                <svg className="progress-circle w-24 h-24 mx-auto" viewBox="0 0 36 36">
-                  <path 
-                    className="text-muted" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="3"
-                    d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                  <path 
-                    className="text-primary" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="3" 
-                    strokeDasharray={`${progress}, 100`}
-                    d="M18 2.0845a 15.9155 15.9155 0 0 1 0 31.831a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-2xl font-bold text-card-foreground" data-testid="text-progress-percentage">
-                    {Math.round(progress)}%
-                  </span>
-                </div>
-              </div>
-              <p className="text-center text-muted-foreground text-sm" data-testid="text-progress-words">
-                已学习 {currentWordIndex + 1}/{words.length} 个单词
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold text-card-foreground mb-4">快捷操作</h3>
-              <div className="space-y-3">
-                <Button 
-                  variant="secondary" 
-                  className="w-full justify-start" 
-                  onClick={() => addToVocabularyMutation.mutate(currentWord.id)}
-                  data-testid="button-add-vocabulary"
-                >
-                  <Plus className="mr-3 h-4 w-4" />
-                  添加到生词本
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start" 
-                  onClick={() => toggleStarMutation.mutate(currentWord.id)}
-                  data-testid="button-toggle-star"
-                >
-                  <Bookmark className="mr-3 h-4 w-4" />
-                  标记重点
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  data-testid="button-share-word"
-                >
-                  <Share2 className="mr-3 h-4 w-4" />
-                  分享单词
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Word List */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold text-card-foreground mb-4">今日单词列表</h3>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {words.map((word, index) => (
-                  <div 
-                    key={word.id} 
-                    className={`flex items-center justify-between p-2 rounded transition-colors cursor-pointer ${
-                      index === currentWordIndex ? "bg-primary/10" : "hover:bg-muted"
-                    }`}
-                    onClick={() => setCurrentWordIndex(index)}
-                    data-testid={`word-list-item-${index}`}
-                  >
-                    <span className="text-sm text-card-foreground">{word.word}</span>
-                    <div className={`w-2 h-2 rounded-full ${
-                      (word.progress?.masteryLevel || 0) > 70 ? "bg-chart-2" : 
-                      (word.progress?.masteryLevel || 0) > 30 ? "bg-chart-1" : "bg-muted"
-                    }`}></div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Sidebar can be added back if needed */}
         </div>
       </div>
     </div>

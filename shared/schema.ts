@@ -34,6 +34,10 @@ export const userProgress = pgTable("user_progress", {
   timesCorrect: integer("times_correct").notNull().default(0),
   lastStudied: timestamp("last_studied"),
   nextReview: timestamp("next_review"),
+  // SM-2 algorithm fields
+  interval: integer("interval").notNull().default(0),
+  easeFactor: real("ease_factor").notNull().default(2.5),
+  repetitions: integer("repetitions").notNull().default(0),
   isStarred: boolean("is_starred").notNull().default(false),
   isInVocabularyBook: boolean("is_in_vocabulary_book").notNull().default(false),
 });

@@ -100,13 +100,13 @@ export default function Plan() {
                 </Label>
                 <Select value={targetCategory} onValueChange={setTargetCategory}>
                   <SelectTrigger data-testid="select-category">
-                    <SelectValue />
+                    <SelectValue placeholder="选择一个学习阶段" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="junior">初中英语</SelectItem>
-                    <SelectItem value="senior">高中英语</SelectItem>
-                    <SelectItem value="gaokao">高考英语</SelectItem>
-                    <SelectItem value="custom">自定义词库</SelectItem>
+                    <SelectItem value="junior">初中阶段</SelectItem>
+                    <SelectItem value="senior">高中阶段</SelectItem>
+                    <SelectItem value="cet">四六级</SelectItem>
+                    <SelectItem value="professional">专业阶段</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -152,6 +152,23 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.get("/api/new-words-for-plan", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as User).id;
+      const activePlan = await storage.getActiveStudyPlan(userId);
+
+      if (!activePlan) {
+        return res.json([]); // No active plan, return no new words
+      }
+
+      const { targetCategory, dailyWordCount } = activePlan;
+      const words = await storage.getNewWordsForPlan(userId, targetCategory, dailyWordCount);
+      res.json(words);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch new words for plan" });
+    }
+  });
+
   app.post("/api/study-sessions", isAuthenticated, async (req, res) => {
     try {
       const result = insertStudySessionSchema.safeParse(req.body);

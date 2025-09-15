@@ -22,6 +22,7 @@ export interface IStorage {
   updateUserProgress(userId: string, wordId: string, progress: Partial<InsertUserProgress>): Promise<UserProgress>;
   getWordsForReview(userId: string): Promise<WordWithProgress[]>;
   getWordsByMasteryLevel(userId: string, minLevel: number, maxLevel: number): Promise<WordWithProgress[]>;
+  getNewWordsForPlan(userId: string, category: string, limit: number): Promise<Word[]>;
   
   // Study sessions
   createStudySession(session: InsertStudySession): Promise<StudySession>;

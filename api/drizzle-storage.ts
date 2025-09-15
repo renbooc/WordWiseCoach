@@ -72,6 +72,19 @@ export class DrizzleStorage implements IStorage {
 
     return results.map(r => ({ ...r.words!, progress: r.user_progress }));
   }
+
+  async getNewWordsForPlan(userId: string, category: string, limit: number): Promise<Word[]> {
+    const alreadyStudiedWordIds = db.select({ wordId: userProgress.wordId }).from(userProgress).where(eq(userProgress.userId, userId));
+
+    const newWords = await db.select().from(words)
+      .where(and(
+        eq(words.category, category),
+        sql`${words.id} NOT IN ${alreadyStudiedWordIds}`
+      ))
+      .limit(limit);
+
+    return newWords;
+  }
   
   // ===== STUDY SESSIONS =====
   async createStudySession(session: InsertStudySession): Promise<StudySession> {
