@@ -125,14 +125,14 @@ export default function Header() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
+                    <span>注销</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
               <div className="space-x-2">
-                <Button variant="ghost" onClick={() => setLocation('/login')}>Login</Button>
-                <Button onClick={() => setLocation('/signup')}>Sign Up</Button>
+                <Button variant="ghost" onClick={() => setLocation('/login')}>登录</Button>
+                <Button onClick={() => setLocation('/signup')}>注册</Button>
               </div>
             )}
           </div>
