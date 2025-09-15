@@ -68,8 +68,8 @@ export default function Plan() {
       dailyWordCount: dailyWordCount[0],
       studyDuration: studyDuration[0],
       reviewStrategy,
-      studyFocus,
-      weeklySchedule,
+      studyFocus: JSON.stringify(studyFocus),
+      weeklySchedule: JSON.stringify(weeklySchedule),
       isActive: true,
     };
 
