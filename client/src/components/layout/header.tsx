@@ -33,6 +33,16 @@ export default function Header() {
     setTheme(prev => prev === "light" ? "dark" : "light");
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setLocation("/login");
+    } catch (error) {
+      // Handle or log the error if needed
+      console.error("Logout failed", error);
+    }
+  };
+
   const [location] = useLocation();
   const isActive = (path: string) => {
     // Special case for dashboard
@@ -113,7 +123,7 @@ export default function Header() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout}>
+                  <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
                   </DropdownMenuItem>

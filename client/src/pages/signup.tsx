@@ -29,7 +29,7 @@ export function SignupPage() {
 
       if (response.ok) {
         // On successful signup, log the user in and redirect.
-        window.location.href = "/dashboard";
+        setLocation("/dashboard");
       } else {
         const data = await response.json();
         setError(data.message || "Failed to create an account.");

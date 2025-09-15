@@ -48,10 +48,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
       setUser(null);
-      // Redirect to login page after logout
-      window.location.href = '/login';
     } catch (error) {
       console.error('Failed to logout:', error);
+      throw error; // Re-throw the error to be caught by the caller
     }
   };
 
