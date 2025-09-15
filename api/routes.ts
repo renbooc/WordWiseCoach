@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { storage } from "./storage-instance.js";
-import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema } from "../shared/schema.js";
+import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertCollectionSchema } from "../shared/schema.js";
 import type { User } from "../shared/schema.js";
 import passport, { hashPassword } from './auth.js';
 
@@ -29,29 +29,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
-
-function parseCSV(csvText: string): any[] {
-  const lines = csvText.trim().split('\n');
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim());
-  const data = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-    const obj: any = {};
-    headers.forEach((header, index) => {
-      const value = values[index] || '';
-      if (header === 'difficulty' || header === 'frequency') {
-        obj[header] = parseInt(value) || 1;
-      } else {
-        obj[header] = value;
-      }
-    });
-    if (obj.word && obj.phonetic && obj.partOfSpeech && obj.chineseDefinition) {
-      data.push(obj);
-    }
-  }
-  return data;
-}
 
 export function registerRoutes(app: Express) {
   // ===== AUTHENTICATION =====
@@ -174,6 +151,40 @@ export function registerRoutes(app: Express) {
       res.status(500).json({ message: "Failed to fetch review words" });
     }
   });
+
+  // ===== COLLECTIONS =====
+  app.get("/api/collections", isAuthenticated, async (req, res) => {
+    const collections = await storage.getCollections((req.user as User).id);
+    res.json(collections);
+  });
+
+  app.post("/api/collections", isAuthenticated, async (req, res) => {
+    const validation = insertCollectionSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ message: "Invalid collection data", errors: validation.error.issues });
+    }
+    const collection = await storage.createCollection({ ...validation.data, userId: (req.user as User).id });
+    res.status(201).json(collection);
+  });
+
+  app.post("/api/words/:wordId/collections", isAuthenticated, async (req, res) => {
+    const { wordId } = req.params;
+    const { collectionId } = req.body;
+    if (!collectionId) {
+      return res.status(400).json({ message: "collectionId is required" });
+    }
+    await storage.addWordToCollection((req.user as User).id, wordId, collectionId);
+    res.status(204).send();
+  });
+
+  app.delete("/api/words/:wordId/collections/:collectionId", isAuthenticated, async (req, res) => {
+    const { wordId, collectionId } = req.params;
+    await storage.removeWordFromCollection((req.user as User).id, wordId, collectionId);
+    res.status(204).send();
+  });
+
+
+  // ===== STUDY SESSIONS, RESULTS, PLANS, ETC. (existing code) =====
 
   app.post("/api/study-sessions", isAuthenticated, async (req, res) => {
     try {

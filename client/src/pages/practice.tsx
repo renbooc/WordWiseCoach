@@ -1,369 +1,185 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ListChecks, Edit, Languages, Headphones, Volume2, Clock, Star } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import type { WordWithProgress } from "@shared/schema";
+import type { Word } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import PracticeExercise from "@/components/practice-exercise";
+import type { ExerciseQuestion, ExerciseType } from "@/components/practice-exercise";
+import { generateQuestion } from "@/lib/question-generator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
-type PracticeMode = "multiple-choice" | "fill-blank" | "translation" | "listening";
-
-interface PracticeQuestion {
-  word: WordWithProgress;
-  question: string;
-  options?: string[];
-  correctAnswer: string;
-  type: PracticeMode;
-}
+const EXERCISE_TYPE_MAP: Record<ExerciseType, string> = {
+  "multiple-choice": "选择题",
+  "fill-blank": "填空题",
+  "translation": "翻译题",
+  "spelling": "拼写题",
+  "listening": "听力题",
+};
 
 export default function Practice() {
-  const [selectedMode, setSelectedMode] = useState<PracticeMode | null>(null);
+  const [view, setView] = useState<"setup" | "practicing">("setup");
+  const [selectedTypes, setSelectedTypes] = useState<ExerciseType[]>(Object.keys(EXERCISE_TYPE_MAP) as ExerciseType[]);
+  const [questions, setQuestions] = useState<ExerciseQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [score, setScore] = useState(0);
   const [isAnswered, setIsAnswered] = useState(false);
-  const [questions, setQuestions] = useState<PracticeQuestion[]>([]);
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [score, setScore] = useState(0);
   const { toast } = useToast();
 
-  const { data: words, isLoading } = useQuery<WordWithProgress[]>({
-    queryKey: ["/api/words"],
-    select: (data) => data.slice(0, 10), // Get 10 words for practice
+  const { data: practiceWords, isLoading: isLoadingPracticeWords } = useQuery<Word[]>({
+    queryKey: ["words-for-review"],
+    queryFn: () => apiRequest("GET", "/api/words-for-review").then(res => res.json()),
+    staleTime: 5 * 60 * 1000,
   });
 
-  const savePracticeResultMutation = useMutation({
-    mutationFn: async (result: any) => {
-      const response = await apiRequest("POST", "/api/practice-results", result);
-      return response.json();
-    },
+  const { data: distractorWords, isLoading: isLoadingDistractors } = useQuery<Word[]>({
+    queryKey: ["all-words"],
+    queryFn: () => apiRequest("GET", "/api/words").then(res => res.json()),
+    staleTime: Infinity,
   });
 
-  const generateQuestions = (words: WordWithProgress[], mode: PracticeMode): PracticeQuestion[] => {
-    return words.map(word => {
-      switch (mode) {
-        case "multiple-choice":
-          const otherWords = words.filter(w => w.id !== word.id).slice(0, 3);
-          const options = [word.chineseDefinition, ...otherWords.map(w => w.chineseDefinition)];
-          return {
-            word,
-            question: `选择单词 "${word.word}" 的正确释义：`,
-            options: options.sort(() => Math.random() - 0.5),
-            correctAnswer: word.chineseDefinition,
-            type: mode,
-          };
-        case "translation":
-          return {
-            word,
-            question: `请翻译：${word.chineseDefinition}`,
-            correctAnswer: word.word,
-            type: mode,
-          };
-        case "fill-blank":
-          const sentence = word.englishExample.replace(new RegExp(word.word, 'gi'), '____');
-          return {
-            word,
-            question: `填空：${sentence}`,
-            correctAnswer: word.word,
-            type: mode,
-          };
-        case "listening":
-          return {
-            word,
-            question: "听音选词，选择正确的单词：",
-            options: [word.word, ...words.filter(w => w.id !== word.id).slice(0, 3).map(w => w.word)].sort(() => Math.random() - 0.5),
-            correctAnswer: word.word,
-            type: mode,
-          };
-        default:
-          return {
-            word,
-            question: word.word,
-            correctAnswer: word.chineseDefinition,
-            type: mode,
-          };
-      }
-    });
-  };
+  const handleStartPractice = () => {
+    if (!practiceWords || !distractorWords || selectedTypes.length === 0) return;
 
-  const startPractice = (mode: PracticeMode) => {
-    if (!words) return;
-    
-    setSelectedMode(mode);
-    const practiceQuestions = generateQuestions(words, mode);
-    setQuestions(practiceQuestions);
+    const generatedQuestions = practiceWords
+      .map(word => generateQuestion(word, distractorWords, selectedTypes))
+      .filter((q): q is ExerciseQuestion => q !== null);
+
+    if (generatedQuestions.length === 0) {
+      toast({ title: "无法生成题目", description: "根据所选单词和题型，无法生成有效的练习题。请尝试选择更多题型或学习新单词。", variant: "destructive" });
+      return;
+    }
+
+    setQuestions(generatedQuestions);
     setCurrentQuestionIndex(0);
     setScore(0);
-    setSelectedAnswer(null);
     setIsAnswered(false);
+    setShowCorrection(false);
+    setView("practicing");
   };
 
-  const selectAnswer = (answer: string) => {
+  const handleAnswer = (answer: string) => {
     if (isAnswered) return;
-    
-    setSelectedAnswer(answer);
-    setIsAnswered(true);
-    
     const currentQuestion = questions[currentQuestionIndex];
-    const isCorrect = answer === currentQuestion.correctAnswer;
-    
-    if (isCorrect) {
-      setScore(score + 1);
-    }
+    const isCorrect = answer.toLowerCase() === currentQuestion.correctAnswer.toLowerCase();
 
-    // Save practice result
-    savePracticeResultMutation.mutate({
-      sessionId: "temp-session", // In a real app, you'd have a proper session ID
-      wordId: currentQuestion.word.id,
-      exerciseType: currentQuestion.type,
-      isCorrect,
-      userAnswer: answer,
-      correctAnswer: currentQuestion.correctAnswer,
-      timeSpent: 10, // Default time, in a real app you'd track actual time
-    });
+    setQuestions(prev => prev.map((q, index) => index === currentQuestionIndex ? { ...q, userAnswer: answer, isCorrect } : q));
+    if (isCorrect) setScore(score + 1);
 
-    toast({
-      title: isCorrect ? "正确！" : "不正确",
-      description: isCorrect ? "继续保持！" : `正确答案是：${currentQuestion.correctAnswer}`,
-    });
+    toast({ title: isCorrect ? "正确！" : "不正确", description: isCorrect ? "" : `正确答案: ${currentQuestion.correctAnswer}`, variant: isCorrect ? "default" : "destructive" });
+    setIsAnswered(true);
+    setShowCorrection(true);
   };
 
-  const nextQuestion = () => {
+  const handleNextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setSelectedAnswer(null);
+      setCurrentQuestionIndex(prev => prev + 1);
       setIsAnswered(false);
+      setShowCorrection(false);
     } else {
-      // Practice session completed
-      toast({
-        title: "练习完成！",
-        description: `得分：${score}/${questions.length}`,
-      });
-      setSelectedMode(null);
+      toast({ title: "练习完成！", description: `你的得分是: ${score} / ${questions.length}`, duration: 5000 });
+      setView("setup");
     }
   };
 
-  const playWord = () => {
-    if ('speechSynthesis' in window && questions[currentQuestionIndex]) {
-      const utterance = new SpeechSynthesisUtterance(questions[currentQuestionIndex].word.word);
-      utterance.lang = 'en-US';
-      speechSynthesis.speak(utterance);
-    }
+  const handleTypeSelection = (type: ExerciseType, checked: boolean) => {
+    setSelectedTypes(prev => 
+      checked ? [...prev, type] : prev.filter(t => t !== type)
+    );
   };
+
+  const isLoading = isLoadingPracticeWords || isLoadingDistractors;
 
   if (isLoading) {
+    return <div className="text-center py-16">正在加载练习数据...</div>;
+  }
+
+  if (!practiceWords || practiceWords.length === 0) {
     return (
-      <div className="space-y-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">练单词</h2>
-          <p className="text-muted-foreground">通过多种练习模式巩固记忆</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-6">
-                <div className="w-12 h-12 bg-muted rounded-lg mb-4"></div>
-                <div className="h-6 bg-muted rounded mb-2"></div>
-                <div className="h-4 bg-muted rounded"></div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+      <div className="text-center py-16">
+        <h2 className="text-2xl font-bold text-foreground mb-4">没有需要练习的单词</h2>
+        <p className="text-muted-foreground mb-6">去学习一些新单词，或者稍后再回来复习吧！</p>
+        <Button onClick={() => window.location.href = "/wordbank"}>前往单词库</Button>
       </div>
     );
   }
 
-  if (!selectedMode) {
+  if (view === "setup") {
     return (
-      <div className="space-y-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">练单词</h2>
-          <p className="text-muted-foreground">通过多种练习模式巩固记忆</p>
-        </div>
-
-        {/* Practice Mode Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card 
-            className="cursor-pointer hover:border-primary transition-colors group" 
-            onClick={() => startPractice("multiple-choice")}
-            data-testid="card-multiple-choice"
-          >
-            <CardContent className="p-6">
-              <div className="w-12 h-12 bg-chart-1 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <ListChecks className="text-white text-xl" />
+      <div className="max-w-3xl mx-auto space-y-8">
+        <h2 className="text-3xl font-bold text-foreground">设置练习</h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>选择题型</CardTitle>
+            <CardDescription>选择你想要在本次练习中包含的题目类型。</CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {Object.entries(EXERCISE_TYPE_MAP).map(([type, name]) => (
+              <div key={type} className="flex items-center space-x-2 p-3 rounded-lg bg-muted/50">
+                <Checkbox 
+                  id={type} 
+                  checked={selectedTypes.includes(type as ExerciseType)}
+                  onCheckedChange={(checked) => handleTypeSelection(type as ExerciseType, !!checked)}
+                />
+                <label htmlFor={type} className="text-sm font-medium leading-none cursor-pointer">
+                  {name}
+                </label>
               </div>
-              <h3 className="font-semibold text-card-foreground mb-2">选择题练习</h3>
-              <p className="text-sm text-muted-foreground">从多个选项中选择正确答案</p>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:border-primary transition-colors group" 
-            onClick={() => startPractice("fill-blank")}
-            data-testid="card-fill-blank"
-          >
-            <CardContent className="p-6">
-              <div className="w-12 h-12 bg-chart-2 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Edit className="text-white text-xl" />
-              </div>
-              <h3 className="font-semibold text-card-foreground mb-2">填空练习</h3>
-              <p className="text-sm text-muted-foreground">根据上下文填入正确单词</p>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:border-primary transition-colors group" 
-            onClick={() => startPractice("translation")}
-            data-testid="card-translation"
-          >
-            <CardContent className="p-6">
-              <div className="w-12 h-12 bg-chart-3 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Languages className="text-white text-xl" />
-              </div>
-              <h3 className="font-semibold text-card-foreground mb-2">翻译练习</h3>
-              <p className="text-sm text-muted-foreground">英译中和中译英互动练习</p>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:border-primary transition-colors group" 
-            onClick={() => startPractice("listening")}
-            data-testid="card-listening"
-          >
-            <CardContent className="p-6">
-              <div className="w-12 h-12 bg-chart-4 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <Headphones className="text-white text-xl" />
-              </div>
-              <h3 className="font-semibold text-card-foreground mb-2">听力练习</h3>
-              <p className="text-sm text-muted-foreground">听音选词和听写练习</p>
-            </CardContent>
-          </Card>
-        </div>
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>练习词汇</CardTitle>
+            <CardDescription>本次将练习以下 {practiceWords.length} 个单词。</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {practiceWords.map(word => (
+              <Badge key={word.id} variant="secondary">{word.word}</Badge>
+            ))}
+          </CardContent>
+        </Card>
+        <Button onClick={handleStartPractice} size="lg" className="w-full" disabled={selectedTypes.length === 0}>
+          开始练习
+        </Button>
       </div>
     );
   }
 
   const currentQuestion = questions[currentQuestionIndex];
-  const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+  if (!currentQuestion) return <div>正在生成题目...</div>;
 
   return (
-    <div className="space-y-8">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-foreground mb-2">练单词</h2>
-        <p className="text-muted-foreground">通过多种练习模式巩固记忆</p>
+    <div className="space-y-8 max-w-3xl mx-auto">
+      <div>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-2xl font-bold text-foreground">巩固练习</h2>
+          <div className="text-lg font-semibold text-muted-foreground">
+            <span className="text-primary">{currentQuestionIndex + 1}</span> / {questions.length}
+          </div>
+        </div>
+        <Progress value={((currentQuestionIndex + 1) / questions.length) * 100} className="h-2" />
       </div>
-
-      {/* Practice Interface */}
-      <Card className="border border-border">
-        <CardHeader className="border-b border-border">
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle data-testid="text-practice-mode">
-                {selectedMode === "multiple-choice" && "选择题练习"}
-                {selectedMode === "fill-blank" && "填空练习"}
-                {selectedMode === "translation" && "翻译练习"}
-                {selectedMode === "listening" && "听力练习"}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground" data-testid="text-question-progress">
-                第 {currentQuestionIndex + 1} 题 / 共 {questions.length} 题
-              </p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">02:45</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Star className="h-4 w-4 text-chart-3" />
-                <span className="text-sm text-muted-foreground" data-testid="text-current-score">
-                  {score}分
-                </span>
-              </div>
-            </div>
-          </div>
-          <Progress value={progress} className="h-2 mt-4" data-testid="progress-practice" />
-        </CardHeader>
-
-        <CardContent className="p-8">
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center mb-8">
-              <h4 className="text-2xl font-semibold text-card-foreground mb-4" data-testid="text-question">
-                {currentQuestion.question}
-              </h4>
-              {selectedMode === "listening" && (
-                <Button onClick={playWord} data-testid="button-play-listening">
-                  <Volume2 className="h-6 w-6" />
-                </Button>
-              )}
-            </div>
-
-            {currentQuestion.options ? (
-              <div className="space-y-4">
-                {currentQuestion.options.map((option, index) => {
-                  const letter = String.fromCharCode(65 + index);
-                  const isSelected = selectedAnswer === option;
-                  const isCorrect = option === currentQuestion.correctAnswer;
-                  
-                  return (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      className={`w-full p-4 text-left justify-start h-auto border-2 transition-colors ${
-                        isAnswered && isSelected && isCorrect ? "border-chart-2 bg-chart-2/10" :
-                        isAnswered && isSelected && !isCorrect ? "border-destructive bg-destructive/10" :
-                        isAnswered && isCorrect ? "border-chart-2 bg-chart-2/10" :
-                        isSelected ? "border-primary bg-primary/10" : "border-transparent hover:border-primary"
-                      }`}
-                      onClick={() => selectAnswer(option)}
-                      disabled={isAnswered}
-                      data-testid={`button-option-${letter}`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="flex-shrink-0 w-8 h-8 bg-card rounded-full flex items-center justify-center font-semibold">
-                          {letter}
-                        </span>
-                        <span>{option}</span>
-                      </div>
-                    </Button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="请输入答案..."
-                  className="w-full p-4 border border-border rounded-lg text-foreground bg-input"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      selectAnswer((e.target as HTMLInputElement).value);
-                    }
-                  }}
-                  disabled={isAnswered}
-                  data-testid="input-answer"
-                />
-              </div>
-            )}
-
-            <div className="flex justify-between items-center mt-8">
-              <Button 
-                variant="outline" 
-                onClick={() => setSelectedMode(null)}
-                data-testid="button-back-to-modes"
-              >
-                返回模式选择
-              </Button>
-              <Button 
-                onClick={nextQuestion} 
-                disabled={!isAnswered}
-                data-testid="button-next-question"
-              >
-                {currentQuestionIndex < questions.length - 1 ? "下一题" : "完成练习"}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <PracticeExercise 
+        key={currentQuestion.id}
+        question={currentQuestion}
+        onAnswer={handleAnswer}
+        isAnswered={isAnswered}
+        showCorrection={showCorrection}
+      />
+      <div className="flex justify-between">
+        <Button variant="outline" onClick={() => setView("setup")}>返回设置</Button>
+        {isAnswered && (
+          <Button onClick={handleNextQuestion} size="lg">
+            {currentQuestionIndex < questions.length - 1 ? "下一题" : "完成练习"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

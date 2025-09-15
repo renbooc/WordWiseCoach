@@ -1,5 +1,5 @@
 import type { DrizzleStorage } from "./drizzle-storage.js";
-import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
+import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, Collection, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, InsertCollection, WordWithProgress, DashboardStats } from "../shared/schema.js";
 
 // All type imports are used here to define the interface for our storage layer.
 // This ensures that both MemStorage (for testing) and DrizzleStorage (for production)
@@ -13,7 +13,7 @@ export interface IStorage {
   // Word management
   getAllWords(): Promise<Word[]>;
   getWordsByCategory(category: string): Promise<Word[]>;
-  getWord(id: string): Promise<Word | undefined>;
+  getWord(id: string): Promise<WordWithProgress | undefined>;
   searchWords(query: string): Promise<Word[]>;
   createWord(word: InsertWord): Promise<Word>;
   
@@ -39,11 +39,15 @@ export interface IStorage {
   // Dashboard
   getDashboardStats(userId: string): Promise<DashboardStats>;
   
-  // Word collections
+  // Vocabulary management (stars, book, collections)
   getVocabularyBook(userId: string): Promise<WordWithProgress[]>;
   getStarredWords(userId: string): Promise<WordWithProgress[]>;
   toggleWordStar(userId: string, wordId: string): Promise<void>;
   addToVocabularyBook(userId: string, wordId: string): Promise<void>;
+  getCollections(userId: string): Promise<Collection[]>;
+  createCollection(data: InsertCollection & { userId: string }): Promise<Collection>;
+  addWordToCollection(userId: string, wordId: string, collectionId: string): Promise<void>;
+  removeWordFromCollection(userId: string, wordId: string, collectionId: string): Promise<void>;
 }
 
 // We are declaring a global instance of our storage, but initializing it elsewhere.
