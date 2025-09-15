@@ -7,6 +7,9 @@ import connectPgSimple from 'connect-pg-simple';
 // Create the Express app
 const app = express();
 
+// Trust the Vercel proxy
+app.set('trust proxy', 1);
+
 // The express.json() middleware is needed to parse JSON request bodies
 app.use(express.json());
 
@@ -26,7 +29,11 @@ app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 }, // 30 days
+  cookie: { 
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  },
 }));
 
 // Initialize Passport and restore authentication state, if any, from the session.
