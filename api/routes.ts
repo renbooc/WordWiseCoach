@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { storage } from "./storage-instance.js";
-import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema, insertCollectionSchema } from "../shared/schema.js";
+import { signupSchema, insertWordSchema, insertStudySessionSchema, insertPracticeResultSchema, insertStudyPlanSchema } from "../shared/schema.js";
 import type { User } from "../shared/schema.js";
 import passport, { hashPassword } from './auth.js';
 
@@ -151,40 +151,6 @@ export function registerRoutes(app: Express) {
       res.status(500).json({ message: "Failed to fetch review words" });
     }
   });
-
-  // ===== COLLECTIONS =====
-  app.get("/api/collections", isAuthenticated, async (req, res) => {
-    const collections = await storage.getCollections((req.user as User).id);
-    res.json(collections);
-  });
-
-  app.post("/api/collections", isAuthenticated, async (req, res) => {
-    const validation = insertCollectionSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({ message: "Invalid collection data", errors: validation.error.issues });
-    }
-    const collection = await storage.createCollection({ ...validation.data, userId: (req.user as User).id });
-    res.status(201).json(collection);
-  });
-
-  app.post("/api/words/:wordId/collections", isAuthenticated, async (req, res) => {
-    const { wordId } = req.params;
-    const { collectionId } = req.body;
-    if (!collectionId) {
-      return res.status(400).json({ message: "collectionId is required" });
-    }
-    await storage.addWordToCollection((req.user as User).id, wordId, collectionId);
-    res.status(204).send();
-  });
-
-  app.delete("/api/words/:wordId/collections/:collectionId", isAuthenticated, async (req, res) => {
-    const { wordId, collectionId } = req.params;
-    await storage.removeWordFromCollection((req.user as User).id, wordId, collectionId);
-    res.status(204).send();
-  });
-
-
-  // ===== STUDY SESSIONS, RESULTS, PLANS, ETC. (existing code) =====
 
   app.post("/api/study-sessions", isAuthenticated, async (req, res) => {
     try {

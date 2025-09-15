@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, real, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, real, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,22 +21,9 @@ export const words = pgTable("words", {
   englishExample: text("english_example").notNull(),
   chineseExample: text("chinese_example").notNull(),
   difficulty: integer("difficulty").notNull().default(1),
-  category: text("category").notNull().default("general"), // This might be deprecated in favor of collections
+  category: text("category").notNull().default("general"),
   frequency: integer("frequency").notNull().default(1),
 });
-
-export const collections = pgTable("collections", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  name: text("name").notNull(),
-});
-
-export const wordToCollection = pgTable("word_to_collection", {
-  wordId: varchar("word_id").notNull().references(() => words.id, { onDelete: 'cascade' }),
-  collectionId: varchar("collection_id").notNull().references(() => collections.id, { onDelete: 'cascade' }),
-}, (t) => ({
-  pk: primaryKey(t.wordId, t.collectionId),
-}));
 
 export const userProgress = pgTable("user_progress", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -100,11 +87,6 @@ export const signupSchema = z.object({
 });
 
 export const insertWordSchema = createInsertSchema(words).omit({ id: true });
-export const insertCollectionSchema = createInsertSchema(collections, {
-  name: z.string().min(1, { message: "Collection name cannot be empty" }),
-}).omit({ id: true });
-export const insertWordToCollectionSchema = createInsertSchema(wordToCollection);
-
 export const insertUserProgressSchema = createInsertSchema(userProgress).omit({ id: true });
 export const insertStudySessionSchema = createInsertSchema(studySessions).omit({ id: true, createdAt: true });
 export const insertPracticeResultSchema = createInsertSchema(practiceResults).omit({ id: true });
@@ -115,7 +97,6 @@ export const insertStudyPlanSchema = createInsertSchema(studyPlans).omit({ id: t
 
 export type User = typeof users.$inferSelect;
 export type Word = typeof words.$inferSelect;
-export type Collection = typeof collections.$inferSelect;
 export type UserProgress = typeof userProgress.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type PracticeResult = typeof practiceResults.$inferSelect;
@@ -123,7 +104,6 @@ export type StudyPlan = typeof studyPlans.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertWord = z.infer<typeof insertWordSchema>;
-export type InsertCollection = z.infer<typeof insertCollectionSchema>;
 export type InsertUserProgress = z.infer<typeof insertUserProgressSchema>;
 export type InsertStudySession = z.infer<typeof insertStudySessionSchema>;
 export type InsertPracticeResult = z.infer<typeof insertPracticeResultSchema>;
@@ -132,7 +112,6 @@ export type InsertStudyPlan = z.infer<typeof insertStudyPlanSchema>;
 // Helper types for API responses, not directly in DB
 export type WordWithProgress = Word & {
   progress?: UserProgress;
-  collections?: Collection[];
 };
 
 export type DashboardStats = {
