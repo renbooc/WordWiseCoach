@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { BookOpen, Moon, Sun, LogOut } from "lucide-react";
+import { BookOpen, Moon, Sun, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, User } from "@/hooks/use-auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +12,88 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
+
+// Navigation links component to avoid repetition
+const MainNav = ({ className, onLinkClick }: { className?: string, onLinkClick?: () => void }) => {
+  const [location] = useLocation();
+  const isActive = (path: string) => {
+    if (path === "/dashboard" && location === "/") return true;
+    return location === path;
+  };
+
+  const navLinks = [
+    { href: "/dashboard", label: "学习概况" },
+    { href: "/study", label: "记单词" },
+    { href: "/practice", label: "练单词" },
+    { href: "/plan", label: "学习计划" },
+    { href: "/wordbank", label: "单词库" },
+  ];
+
+  return (
+    <nav
+      className={cn("flex items-center space-x-4 lg:space-x-6", className)}
+    >
+      {navLinks.map(link => (
+        <Link
+          key={link.href}
+          href={link.href}
+          onClick={onLinkClick}
+          className={cn(
+            "text-sm font-medium transition-colors hover:text-primary",
+            isActive(link.href) ? "text-primary" : "text-muted-foreground"
+          )}
+        >
+          {link.label}
+        </Link>
+      ))}
+    </nav>
+  );
+};
+
+// Mobile navigation component using a Sheet
+const MobileNav = ({ user }: { user: User | null }) => {
+  const [open, setOpen] = useState(false);
+  const [, setLocation] = useLocation();
+
+  const handleLinkClick = (path: string) => {
+    setLocation(path);
+    setOpen(false);
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button
+          variant="ghost"
+          className="md:hidden transition-transform duration-150 ease-in-out active:scale-95"
+        >
+          <Menu className="h-5 w-5" />
+          <span className="sr-only">Open Menu</span>
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="pr-0">
+        <Link href="/" className="flex items-center space-x-2 mb-6" onClick={() => setOpen(false)}>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <BookOpen className="text-primary-foreground text-sm" />
+            </div>
+            <h1 className="text-xl font-bold text-foreground">智学单词</h1>
+        </Link>
+        <div className="flex flex-col space-y-4">
+          {user ? (
+            <MainNav className="flex-col space-y-4 space-x-0 items-start" onLinkClick={() => setOpen(false)} />
+          ) : (
+            <div className="flex flex-col space-y-2">
+              <Button variant="ghost" onClick={() => handleLinkClick('/login')} className="justify-start">登录</Button>
+              <Button onClick={() => handleLinkClick('/signup')} className="justify-start">注册</Button>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+};
 
 export default function Header() {
   const [, setLocation] = useLocation();
@@ -38,79 +120,39 @@ export default function Header() {
       await logout();
       setLocation("/login");
     } catch (error) {
-      // Handle or log the error if needed
       console.error("Logout failed", error);
     }
-  };
-
-  const [location] = useLocation();
-  const isActive = (path: string) => {
-    // Special case for dashboard
-    if (path === "/dashboard" && location === "/") return true;
-    if (path === "/dashboard" && location === "/dashboard") return true;
-    if (path !== "/dashboard" && path !== "/" && location.startsWith(path)) return true;
-    return false;
   };
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-4">
-            <Link href="/" className="flex items-center space-x-2" data-testid="link-home">
+        <div className="flex h-16 items-center">
+          {/* Left: Mobile Nav and Logo */}
+          <div className="flex items-center">
+            <MobileNav user={user} />
+            <Link href="/" className="hidden md:flex items-center space-x-2 mr-6">
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <BookOpen className="text-primary-foreground text-sm" />
               </div>
               <h1 className="text-xl font-bold text-foreground">智学单词</h1>
             </Link>
-            {user && (
-              <nav className="hidden md:flex space-x-6">
-                <Link 
-                  href="/dashboard" 
-                  className={`transition-colors ${isActive("/dashboard") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                  data-testid="link-dashboard"
-                >
-                  学习概况
-                </Link>
-                <Link 
-                  href="/study" 
-                  className={`transition-colors ${isActive("/study") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                  data-testid="link-study"
-                >
-                  记单词
-                </Link>
-                <Link 
-                  href="/practice" 
-                  className={`transition-colors ${isActive("/practice") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                  data-testid="link-practice"
-                >
-                  练单词
-                </Link>
-                <Link 
-                  href="/plan" 
-                  className={`transition-colors ${isActive("/plan") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                  data-testid="link-plan"
-                >
-                  学习计划
-                </Link>
-                <Link 
-                  href="/wordbank" 
-                  className={`transition-colors ${isActive("/wordbank") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                  data-testid="link-wordbank"
-                >
-                  单词库
-                </Link>
-              </nav>
-            )}
           </div>
+
+          {/* Center: Desktop Navigation */}
+          <div className="flex-1 flex items-center justify-center">
+             {user && <MainNav />}
+          </div>
+
+          {/* Right: Theme Toggle and User Menu */}
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} data-testid="button-theme-toggle">
+            <Button variant="ghost" size="icon" onClick={toggleTheme} data-testid="button-theme-toggle" className="transition-transform duration-150 ease-in-out active:scale-95">
               {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full transition-transform duration-150 ease-in-out active:scale-95">
                     <Avatar className="h-8 w-8">
                       <AvatarFallback>{user.email.charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
@@ -130,9 +172,9 @@ export default function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <div className="space-x-2">
-                <Button variant="ghost" onClick={() => setLocation('/login')}>登录</Button>
-                <Button onClick={() => setLocation('/signup')}>注册</Button>
+              <div className="hidden md:flex items-center space-x-2">
+                <Button variant="ghost" onClick={() => setLocation('/login')} className="transition-transform duration-150 ease-in-out active:scale-95">登录</Button>
+                <Button onClick={() => setLocation('/signup')} className="transition-transform duration-150 ease-in-out active:scale-95">注册</Button>
               </div>
             )}
           </div>
