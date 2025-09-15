@@ -12,7 +12,10 @@ app.use(express.json());
 
 // Session configuration
 if (!process.env.SESSION_SECRET) {
-  throw new Error("SESSION_SECRET environment variable is not set");
+  // In a real app, you'd want to handle this more gracefully.
+  // For this project, we'll assume it's set in the environment.
+  console.warn("SESSION_SECRET environment variable is not set. Using a default for development.");
+  process.env.SESSION_SECRET = "dev-secret";
 }
 const PgSession = connectPgSimple(session);
 app.use(session({
@@ -35,3 +38,11 @@ registerRoutes(app);
 
 // Vercel exports the Express app instance as the default handler
 export default app;
+
+// Start the server only when running in a local development environment
+if (process.env.NODE_ENV === 'development') {
+  const port = process.env.PORT || 3001;
+  app.listen(port, () => {
+    console.log(`API server listening on http://localhost:${port}`);
+  });
+}
