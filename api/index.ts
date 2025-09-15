@@ -8,7 +8,7 @@ import connectPgSimple from 'connect-pg-simple';
 const app = express();
 
 // Trust the Vercel proxy
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // The express.json() middleware is needed to parse JSON request bodies
 app.use(express.json());
