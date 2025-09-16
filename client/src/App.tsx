@@ -28,21 +28,31 @@ function App() {
                 <Route path="/login" component={LoginPage} />
                 <Route path="/signup" component={SignupPage} />
 
-                <ProtectedRoute path="/dashboard">
-                  <Dashboard />
-                </ProtectedRoute>
-                <ProtectedRoute path="/study">
-                  <Study />
-                </ProtectedRoute>
-                <ProtectedRoute path="/practice">
-                  <Practice />
-                </ProtectedRoute>
-                <ProtectedRoute path="/plan">
-                  <Plan />
-                </ProtectedRoute>
-                <ProtectedRoute path="/wordbank">
-                  <WordBank />
-                </ProtectedRoute>
+                <Route path="/dashboard">
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/study">
+                  <ProtectedRoute>
+                    <Study />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/practice">
+                  <ProtectedRoute>
+                    <Practice />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/plan">
+                  <ProtectedRoute>
+                    <Plan />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/wordbank">
+                  <ProtectedRoute>
+                    <WordBank />
+                  </ProtectedRoute>
+                </Route>
 
                 <Route path="/">
                   <Redirect to="/dashboard" />

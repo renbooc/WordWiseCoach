@@ -197,11 +197,16 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/study-plans", isAuthenticated, async (req, res) => {
     try {
-      const result = insertStudyPlanSchema.safeParse(req.body);
+      const planDataFromClient = req.body;
+      const userId = (req.user as User).id;
+      const fullPlanData = { ...planDataFromClient, userId };
+
+      const result = insertStudyPlanSchema.safeParse(fullPlanData);
       if (!result.success) {
-        return res.status(400).json({ message: "Invalid study plan data" });
+        console.error("Study plan validation failed:", result.error.issues);
+        return res.status(400).json({ message: "Invalid study plan data", errors: result.error.issues });
       }
-      const plan = await storage.createStudyPlan({ ...result.data, userId: (req.user as User).id });
+      const plan = await storage.createStudyPlan(result.data);
       res.json(plan);
     } catch (error) {
       res.status(500).json({ message: "Failed to create study plan" });

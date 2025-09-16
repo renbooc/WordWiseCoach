@@ -70,8 +70,8 @@ export default function Study() {
 
     const updates: Partial<UserProgress> = {
         ...newSchedule,
-        nextReview: newSchedule.nextReviewDate.toISOString(),
-        lastStudied: new Date().toISOString(),
+        nextReview: newSchedule.nextReviewDate,
+        lastStudied: new Date(),
         timesStudied: (currentWord.progress?.timesStudied || 0) + 1,
         timesCorrect: (currentWord.progress?.timesCorrect || 0) + (isCorrect ? 1 : 0),
     };

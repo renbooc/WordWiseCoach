@@ -18,7 +18,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const SYSTEM_CATEGORIES = {
+const SYSTEM_CATEGORIES: { [key: string]: string } = {
   "primary": "小学阶段",
   "junior": "初中阶段",
   "senior": "高中阶段",
@@ -71,7 +71,7 @@ export default function WordBank() {
   });
   
   const importWordsMutation = useMutation({
-    mutationFn: (formData: FormData) => apiRequest("POST", `/api/words/import`, formData, { "Content-Type": "multipart/form-data" }),
+    mutationFn: (formData: FormData) => apiRequest("POST", `/api/words/import`, formData),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); setShowImportDialog(false); setImportFile(null); toast({ title: "导入成功！" }); },
     onError: () => toast({ title: "导入失败", variant: "destructive" }),
   });
@@ -167,7 +167,9 @@ export default function WordBank() {
         <div className="lg:col-span-3"><Card>
           <CardHeader className="border-b"><div className="relative"><Input placeholder="搜索单词..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" /><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" /></div></CardHeader>
           <CardContent className="p-0">
-            {isLoading && <div className="p-8 text-center"><Skeleton className="h-20 w-full" count={5} /></div>}
+            {isLoading && <div className="p-8 text-center">{Array.from({ length: 5 }).map((_, index) => (
+                <Skeleton key={index} className="h-12 w-full mb-3" />
+              ))}</div>}
             {isError && <div className="p-8 text-center text-destructive">加载单词失败，请稍后重试。</div>}
             {!isLoading && !isError && paginatedWords.length === 0 && <div className="p-8 text-center text-muted-foreground">{searchQuery ? "没有找到匹配的单词" : "此分类下暂无单词"}</div>}
             {!isLoading && !isError && paginatedWords.length > 0 && (

@@ -94,7 +94,10 @@ export const insertWordSchema = createInsertSchema(words).omit({ id: true });
 export const insertUserProgressSchema = createInsertSchema(userProgress).omit({ id: true });
 export const insertStudySessionSchema = createInsertSchema(studySessions).omit({ id: true, createdAt: true });
 export const insertPracticeResultSchema = createInsertSchema(practiceResults).omit({ id: true });
-export const insertStudyPlanSchema = createInsertSchema(studyPlans).omit({ id: true, createdAt: true });
+export const insertStudyPlanSchema = createInsertSchema(studyPlans, {
+  studyFocus: z.array(z.string()),
+  weeklySchedule: z.array(z.boolean()),
+}).omit({ id: true, createdAt: true });
 
 
 // ===== TYPES FOR USE IN APPLICATION CODE =====

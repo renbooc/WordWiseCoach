@@ -7,7 +7,7 @@ import type { WordWithProgress } from "@shared/schema";
 
 export type ExerciseType = "multiple-choice" | "fill-blank" | "translation" | "listening" | "spelling";
 
-interface ExerciseQuestion {
+export interface ExerciseQuestion {
   id: string;
   word: WordWithProgress;
   type: ExerciseType;

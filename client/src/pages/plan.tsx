@@ -43,6 +43,15 @@ export default function Plan() {
       toast({ title: "学习计划已保存", description: "你的专属学习计划已创建成功" });
       queryClient.invalidateQueries({ queryKey: ["/api/study-plans/active"] });
     },
+    onError: async (error: Response) => {
+      const errorData = await error.json();
+      console.error("Failed to create study plan:", errorData);
+      toast({
+        title: "保存失败",
+        description: `原因: ${errorData.errors?.[0]?.message || '未知错误'}`,
+        variant: "destructive",
+      });
+    },
   });
 
   const handleFocusChange = (focus: string, checked: boolean) => {
@@ -68,11 +77,12 @@ export default function Plan() {
       dailyWordCount: dailyWordCount[0],
       studyDuration: studyDuration[0],
       reviewStrategy,
-      studyFocus: JSON.stringify(studyFocus),
-      weeklySchedule: JSON.stringify(weeklySchedule),
+      studyFocus: studyFocus,
+      weeklySchedule: weeklySchedule,
       isActive: true,
     };
 
+    console.log("Sending study plan data:", JSON.stringify(planData, null, 2));
     createPlanMutation.mutate(planData);
   };
 
