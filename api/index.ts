@@ -64,10 +64,10 @@ if (process.env.NODE_ENV !== 'development') {
 // Vercel exports the Express app instance as the default handler
 export default app;
 
-// Start the server only when running in a local development environment
-if (process.env.NODE_ENV === 'development') {
+// Start the server when running locally (both development and production)
+if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'production') {
   const port = process.env.PORT || 3001;
   app.listen(port, () => {
-    console.log(`API server listening on http://localhost:${port}`);
+    console.log(`API server listening on http://localhost:${port} (${process.env.NODE_ENV})`);
   });
 }

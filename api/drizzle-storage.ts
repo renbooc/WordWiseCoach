@@ -90,6 +90,16 @@ export class DrizzleStorage implements IStorage {
     return result[0];
   }
 
+  async getStudySession(userId: string, sessionId: string): Promise<StudySession | undefined> {
+    const results = await db.select().from(studySessions).where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)));
+    return results[0];
+  }
+
+  async updateStudySession(sessionId: string, updates: Partial<StudySession>): Promise<StudySession> {
+    const result = await db.update(studySessions).set(updates).where(eq(studySessions.id, sessionId)).returning();
+    return result[0];
+  }
+
   async getRecentStudySessions(userId: string, limit: number): Promise<StudySession[]> {
     return await db.select().from(studySessions).where(eq(studySessions.userId, userId)).orderBy(desc(studySessions.createdAt)).limit(limit);
   }

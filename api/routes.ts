@@ -198,6 +198,26 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.put("/api/study-sessions/:sessionId", isAuthenticated, async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const updateData = req.body;
+      const userId = (req.user as User).id;
+
+      // 验证会话属于当前用户
+      const session = await storage.getStudySession(userId, sessionId);
+      if (!session) {
+        return res.status(404).json({ message: "Study session not found" });
+      }
+
+      const updatedSession = await storage.updateStudySession(sessionId, updateData);
+      res.json(updatedSession);
+    } catch (error) {
+      console.error("Failed to update study session:", error);
+      res.status(500).json({ message: "Failed to update study session" });
+    }
+  });
+
   app.post("/api/practice-results", isAuthenticated, async (req, res) => {
     try {
       const result = insertPracticeResultSchema.safeParse(req.body);

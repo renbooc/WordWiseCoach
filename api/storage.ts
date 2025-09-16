@@ -26,6 +26,8 @@ export interface IStorage {
   
   // Study sessions
   createStudySession(session: InsertStudySession & { userId: string }): Promise<StudySession>;
+  getStudySession(userId: string, sessionId: string): Promise<StudySession | undefined>;
+  updateStudySession(sessionId: string, updates: Partial<StudySession>): Promise<StudySession>;
   getRecentStudySessions(userId: string, limit: number): Promise<StudySession[]>;
   
   // Practice results

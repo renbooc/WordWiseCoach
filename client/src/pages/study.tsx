@@ -25,6 +25,8 @@ function shuffle<T>(array: T[]): T[] {
 export default function Study() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [sessionWords, setSessionWords] = useState<SessionWord[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -46,6 +48,35 @@ export default function Study() {
       setCurrentWordIndex(0);
     }
   }, [reviewWords, newWords]);
+
+  // 创建学习会话的mutation
+  const createStudySessionMutation = useMutation({
+    mutationFn: async (sessionData: {
+      sessionType: string;
+      wordsLearned: number;
+      timeSpent: number;
+      accuracy: number;
+    }) => {
+      const response = await apiRequest("POST", "/api/study-sessions", sessionData);
+      return response.json();
+    },
+    onSuccess: (session) => {
+      setSessionId(session.id);
+    }
+  });
+
+  // 当会话单词加载完毕时，创建学习会话并记录开始时间
+  useEffect(() => {
+    if (sessionWords.length > 0 && !sessionId && !sessionStartTime) {
+      setSessionStartTime(new Date());
+      createStudySessionMutation.mutate({
+        sessionType: "study",
+        wordsLearned: sessionWords.length,
+        timeSpent: 0,
+        accuracy: 0,
+      });
+    }
+  }, [sessionWords, sessionId, sessionStartTime]);
 
   const updateProgressMutation = useMutation({
     mutationFn: async ({ wordId, updates }: { wordId: string; updates: Partial<UserProgress> }) => {
@@ -102,7 +133,23 @@ export default function Study() {
     if (currentWordIndex < sessionWords.length - 1) {
       setCurrentWordIndex(currentWordIndex + 1);
     } else {
-      // Session finished, navigate to summary page with results
+      // Session finished, calculate final statistics and update session
+      const correctCount = sessionWords.filter(w => w.result?.quality === 5).length;
+      const accuracy = sessionWords.length > 0 ? (correctCount / sessionWords.length) * 100 : 0;
+      const timeSpent = sessionStartTime ? Math.floor((Date.now() - sessionStartTime.getTime()) / 1000) : 0;
+
+      // Update session with final statistics (if sessionId exists)
+      if (sessionId) {
+        apiRequest("PUT", `/api/study-sessions/${sessionId}`, {
+          accuracy: accuracy / 100, // Convert to decimal
+          timeSpent,
+          wordsLearned: sessionWords.length,
+        }).catch(error => {
+          console.error("Failed to update study session:", error);
+        });
+      }
+
+      // Navigate to summary page with results
       setLocation('/session-summary', { state: { sessionWords: sessionWords } });
     }
   };

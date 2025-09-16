@@ -1,13 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Flame, Book, Target, Clock } from "lucide-react";
+import { Flame, Book, Target, Clock, ArrowRight, BookOpen, Settings, Play } from "lucide-react";
 import type { DashboardStats } from "@shared/schema";
+import { useLocation } from "wouter";
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
   });
+  const [, setLocation] = useLocation();
+
+  // 检查是否为新用户（没有学习过任何单词）
+  const isNewUser = stats && stats.totalWordsLearned === 0 && stats.streakDays === 0;
 
   if (isLoading) {
     return <div className="space-y-8">
@@ -31,6 +37,71 @@ export default function Dashboard() {
 
   if (!stats) {
     return <div>无法加载数据</div>;
+  }
+
+  // 新用户引导
+  if (isNewUser) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center py-8">
+          <BookOpen className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+          <h2 className="text-3xl font-bold text-foreground mb-2">欢迎来到WordWiseCoach！</h2>
+          <p className="text-muted-foreground text-lg mb-8">让我们开始你的英语学习之旅吧</p>
+
+          <div className="max-w-2xl mx-auto">
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-xl">开始学习只需三步</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center font-bold">1</div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">创建学习计划</h3>
+                    <p className="text-sm text-muted-foreground">设置你的学习目标和每日单词量</p>
+                  </div>
+                  <Button variant="outline" onClick={() => setLocation("/plan")}>
+                    <Settings className="w-4 h-4 mr-2" />
+                    创建计划
+                  </Button>
+                </div>
+
+                <div className="flex items-center space-x-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center font-bold">2</div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">开始记单词</h3>
+                    <p className="text-sm text-muted-foreground">根据学习计划学习新单词</p>
+                  </div>
+                  <Button variant="outline" onClick={() => setLocation("/study")}>
+                    <Play className="w-4 h-4 mr-2" />
+                    开始学习
+                  </Button>
+                </div>
+
+                <div className="flex items-center space-x-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center font-bold">3</div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">巩固练习</h3>
+                    <p className="text-sm text-muted-foreground">通过练习加深单词记忆</p>
+                  </div>
+                  <Button variant="outline" onClick={() => setLocation("/practice")}>
+                    <Target className="w-4 h-4 mr-2" />
+                    练习单词
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-center space-x-4">
+              <Button size="lg" onClick={() => setLocation("/plan")} className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                开始创建学习计划
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -175,6 +246,92 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 快速操作区域 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>快速操作</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center space-y-2"
+              onClick={() => setLocation("/study")}
+            >
+              <Play className="h-6 w-6 text-blue-500" />
+              <span className="text-sm">开始学习</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center space-y-2"
+              onClick={() => setLocation("/practice")}
+            >
+              <Target className="h-6 w-6 text-green-500" />
+              <span className="text-sm">练习复习</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center space-y-2"
+              onClick={() => setLocation("/wordbank")}
+            >
+              <BookOpen className="h-6 w-6 text-purple-500" />
+              <span className="text-sm">单词库</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center space-y-2"
+              onClick={() => setLocation("/plan")}
+            >
+              <Settings className="h-6 w-6 text-orange-500" />
+              <span className="text-sm">学习计划</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 学习建议 */}
+      {(stats.reviewReminders.urgent > 0 || stats.todayProgress.newWords.current < stats.todayProgress.newWords.target) && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="pt-6">
+            <div className="flex items-start space-x-3">
+              <div className="bg-amber-100 rounded-full p-2">
+                <Target className="h-5 w-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-800 mb-2">今日学习建议</h3>
+                <div className="space-y-2">
+                  {stats.reviewReminders.urgent > 0 && (
+                    <p className="text-sm text-amber-700">
+                      • 你有 {stats.reviewReminders.urgent} 个单词需要强化复习，建议优先完成
+                    </p>
+                  )}
+                  {stats.todayProgress.newWords.current < stats.todayProgress.newWords.target && (
+                    <p className="text-sm text-amber-700">
+                      • 今日还需学习 {stats.todayProgress.newWords.target - stats.todayProgress.newWords.current} 个新单词
+                    </p>
+                  )}
+                </div>
+                <div className="flex space-x-2 mt-3">
+                  {stats.reviewReminders.urgent > 0 && (
+                    <Button size="sm" variant="outline" onClick={() => setLocation("/practice")}>
+                      开始复习
+                    </Button>
+                  )}
+                  {stats.todayProgress.newWords.current < stats.todayProgress.newWords.target && (
+                    <Button size="sm" variant="outline" onClick={() => setLocation("/study")}>
+                      学习新词
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
