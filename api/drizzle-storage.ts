@@ -2,7 +2,7 @@ import { db } from "./db.js";
 import { users, words, userProgress, studySessions, practiceResults, studyPlans } from "../shared/schema.js";
 import type { User, Word, UserProgress, StudySession, PracticeResult, StudyPlan, InsertUser, InsertWord, InsertUserProgress, InsertStudySession, InsertPracticeResult, InsertStudyPlan, WordWithProgress, DashboardStats } from "../shared/schema.js";
 import type { IStorage } from "./storage.js";
-import { eq, and, lte, gte, desc, sql, countDistinct, sum } from "drizzle-orm";
+import { eq, and, lte, gte, desc, sql, count, countDistinct, sum, isNull, not, or, inArray } from "drizzle-orm";
 
 export class DrizzleStorage implements IStorage {
 
@@ -80,15 +80,7 @@ export class DrizzleStorage implements IStorage {
   }
 
   async getNewWordsForPlan(userId: string, category: string, limit: number): Promise<Word[]> {
-    const alreadyStudiedWordIds = db.select({ wordId: userProgress.wordId }).from(userProgress).where(eq(userProgress.userId, userId));
-
-    const newWords = await db.select().from(words)
-      .where(and(
-        eq(words.category, category),
-        sql`${words.id} NOT IN ${alreadyStudiedWordIds}`
-      ))
-      .limit(limit);
-
+    const newWords = await db.select().from(words).where(eq(words.category, category)).limit(limit);
     return newWords;
   }
   
@@ -113,9 +105,18 @@ export class DrizzleStorage implements IStorage {
   }
   
   // ===== STUDY PLANS =====
+  private async deactivateAllPlans(userId: string) {
+    await db.update(studyPlans).set({ isActive: false }).where(eq(studyPlans.userId, userId));
+  }
+
   async createStudyPlan(plan: InsertStudyPlan): Promise<StudyPlan> {
-    const result = await db.insert(studyPlans).values(plan).returning();
+    await this.deactivateAllPlans(plan.userId);
+    const result = await db.insert(studyPlans).values({ ...plan, isActive: true }).returning();
     return result[0];
+  }
+
+  async getAllUserPlans(userId: string): Promise<StudyPlan[]> {
+    return await db.select().from(studyPlans).where(eq(studyPlans.userId, userId)).orderBy(desc(studyPlans.createdAt));
   }
 
   async getActiveStudyPlan(userId: string): Promise<StudyPlan | undefined> {
@@ -127,50 +128,73 @@ export class DrizzleStorage implements IStorage {
     const result = await db.update(studyPlans).set(updates).where(and(eq(studyPlans.userId, userId), eq(studyPlans.id, id))).returning();
     return result[0];
   }
+
+  async deleteStudyPlan(userId: string, id: string): Promise<void> {
+    await db.delete(studyPlans).where(and(eq(studyPlans.userId, userId), eq(studyPlans.id, id)));
+  }
+
+  async activateStudyPlan(userId: string, id: string): Promise<StudyPlan> {
+    await this.deactivateAllPlans(userId);
+    const result = await db.update(studyPlans).set({ isActive: true }).where(and(eq(studyPlans.userId, userId), eq(studyPlans.id, id))).returning();
+    return result[0];
+  }
   
   // ===== DASHBOARD =====
   async getDashboardStats(userId: string): Promise<DashboardStats> {
-    console.log(`Fetching real dashboard stats for user: ${userId}`);
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const sevenDaysFromNow = new Date(today);
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
-    // 1. Total words learned
-    const totalWordsResult = await db.select({ count: countDistinct(userProgress.wordId) })
-      .from(userProgress)
-      .where(eq(userProgress.userId, userId));
+    const activePlan = await this.getActiveStudyPlan(userId);
+
+    // Queries
+    const totalWordsLearnedQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), gte(userProgress.timesStudied, 1)));
+    const todayStudyTimeQuery = db.select({ total: sum(studySessions.timeSpent) }).from(studySessions).where(and(eq(studySessions.userId, userId), gte(studySessions.createdAt, today)));
+    const masteryRateQuery = db.select({ totalStudied: sum(userProgress.timesStudied), totalCorrect: sum(userProgress.timesCorrect) }).from(userProgress).where(eq(userProgress.userId, userId));
+    const todayNewWordsQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), gte(userProgress.lastStudied, today), eq(userProgress.timesStudied, 1)));
+    const todayReviewedWordsQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), gte(userProgress.lastStudied, today), gte(userProgress.timesStudied, 2)));
+    const urgentReviewQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), or(lte(userProgress.nextReview, today), isNull(userProgress.nextReview))));
+    const regularReviewQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), gte(userProgress.nextReview, tomorrow), lte(userProgress.nextReview, sevenDaysFromNow)));
+    const consolidationReviewQuery = db.select({ count: count() }).from(userProgress).where(and(eq(userProgress.userId, userId), gte(userProgress.nextReview, sevenDaysFromNow)));
+    const sessionDatesQuery = db.selectDistinct({ date: sql<string>`DATE(${studySessions.createdAt})` }).from(studySessions).where(eq(studySessions.userId, userId)).orderBy(desc(sql<string>`DATE(${studySessions.createdAt})`));
+
+    // Execute in parallel
+    const [
+      totalWordsResult,
+      todayTimeResult,
+      progressStats,
+      todayNewWordsResult,
+      todayReviewedWordsResult,
+      urgentReviewResult,
+      regularReviewResult,
+      consolidationReviewResult,
+      sessionDatesResult
+    ] = await Promise.all([
+      totalWordsLearnedQuery,
+      todayStudyTimeQuery,
+      masteryRateQuery,
+      todayNewWordsQuery,
+      todayReviewedWordsQuery,
+      urgentReviewQuery,
+      regularReviewQuery,
+      consolidationReviewQuery,
+      sessionDatesQuery
+    ]);
+
+    // Process results
     const totalWordsLearned = totalWordsResult[0]?.count || 0;
-
-    // 2. Today's study time
-    const todayTimeResult = await db.select({ total: sum(studySessions.timeSpent) })
-      .from(studySessions)
-      .where(and(eq(studySessions.userId, userId), gte(studySessions.createdAt, today)));
     const todayStudyTime = Math.round((Number(todayTimeResult[0]?.total) || 0) / 60);
-
-    // 3. Mastery Rate
-    const progressStats = await db.select({
-        totalStudied: sum(userProgress.timesStudied),
-        totalCorrect: sum(userProgress.timesCorrect)
-      })
-      .from(userProgress)
-      .where(eq(userProgress.userId, userId));
-    
     const totalStudied = Number(progressStats[0]?.totalStudied) || 0;
     const totalCorrect = Number(progressStats[0]?.totalCorrect) || 0;
     const masteryRate = totalStudied > 0 ? Math.round((totalCorrect / totalStudied) * 100) : 0;
-
-    // 4. Streak Days (a more complex query)
-    const sessionDatesResult = await db.selectDistinct({ date: sql<string>`DATE(${studySessions.createdAt})` })
-      .from(studySessions)
-      .where(eq(studySessions.userId, userId))
-      .orderBy(desc(sql<string>`DATE(${studySessions.createdAt})`));
 
     let streakDays = 0;
     if (sessionDatesResult.length > 0) {
         let currentDate = new Date();
         let lastDate = new Date(sessionDatesResult[0].date);
-        
-        // Check if today or yesterday is the last study day
         if (Math.abs(currentDate.getTime() - lastDate.getTime()) / (1000 * 3600 * 24) <= 1) {
             streakDays = 1;
             for (let i = 1; i < sessionDatesResult.length; i++) {
@@ -186,19 +210,21 @@ export class DrizzleStorage implements IStorage {
         }
     }
 
-    // For todayProgress and reviewReminders, we will return mock data for now
-    // as their calculation is also complex.
     return {
       streakDays,
       totalWordsLearned,
       masteryRate,
       todayStudyTime,
       todayProgress: {
-        newWords: { current: 0, target: 10 },
-        review: { current: 0, target: 15 },
-        listening: { current: 0, target: 8 },
+        newWords: { current: todayNewWordsResult[0]?.count || 0, target: activePlan?.dailyWordCount || 10 },
+        review: { current: todayReviewedWordsResult[0]?.count || 0, target: 15 }, // Target for review is not in plan, using static value
+        listening: { current: 0, target: 8 }, // Not implemented
       },
-      reviewReminders: { urgent: 0, regular: 0, consolidation: 0 }
+      reviewReminders: {
+        urgent: urgentReviewResult[0]?.count || 0,
+        regular: regularReviewResult[0]?.count || 0,
+        consolidation: consolidationReviewResult[0]?.count || 0,
+      }
     };
   }
   

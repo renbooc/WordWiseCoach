@@ -136,19 +136,7 @@ export default function Dashboard() {
                 data-testid="progress-review"
               />
             </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-card-foreground">听力练习</span>
-                <span className="text-sm text-muted-foreground" data-testid="text-listening-progress">
-                  {stats.todayProgress.listening.current}/{stats.todayProgress.listening.target}
-                </span>
-              </div>
-              <Progress 
-                value={(stats.todayProgress.listening.current / stats.todayProgress.listening.target) * 100} 
-                className="h-2"
-                data-testid="progress-listening"
-              />
-            </div>
+            
           </CardContent>
         </Card>
 

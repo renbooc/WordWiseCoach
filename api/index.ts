@@ -3,9 +3,17 @@ import session from "express-session";
 import passport from "./auth.js";
 import { registerRoutes } from "./routes.js";
 import connectPgSimple from 'connect-pg-simple';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Create the Express app
 const app = express();
+
+// --- PATH CONFIGURATION ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- MIDDLEWARE ---
 
 // Trust the Vercel proxy
 app.set('trust proxy', true);
@@ -15,8 +23,6 @@ app.use(express.json());
 
 // Session configuration
 if (!process.env.SESSION_SECRET) {
-  // In a real app, you'd want to handle this more gracefully.
-  // For this project, we'll assume it's set in the environment.
   console.warn("SESSION_SECRET environment variable is not set. Using a default for development.");
   process.env.SESSION_SECRET = "dev-secret";
 }
@@ -40,8 +46,20 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// --- API ROUTES ---
 // Register all API routes
 registerRoutes(app);
+
+// --- FRONTEND SERVING (for integrated development/production) ---
+if (process.env.NODE_ENV !== 'development') {
+  const frontendDistPath = path.join(__dirname, '../../dist');
+  app.use(express.static(frontendDistPath));
+
+  // For any route that is not an API route, serve the index.html file.
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+}
 
 // Vercel exports the Express app instance as the default handler
 export default app;

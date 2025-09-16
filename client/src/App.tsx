@@ -13,6 +13,7 @@ import Plan from "@/pages/plan";
 import WordBank from "@/pages/wordbank";
 import { LoginPage } from "@/pages/login";
 import { SignupPage } from "@/pages/signup";
+import SessionSummary from "@/pages/session-summary";
 import NotFound from "@/pages/not-found";
 
 function App() {
@@ -51,6 +52,11 @@ function App() {
                 <Route path="/wordbank">
                   <ProtectedRoute>
                     <WordBank />
+                  </ProtectedRoute>
+                </Route>
+                <Route path="/session-summary">
+                  <ProtectedRoute>
+                    <SessionSummary />
                   </ProtectedRoute>
                 </Route>
 

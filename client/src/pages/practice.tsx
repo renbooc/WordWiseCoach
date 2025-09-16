@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,13 +30,57 @@ export default function Practice() {
   const [isAnswered, setIsAnswered] = useState(false);
   const [showCorrection, setShowCorrection] = useState(false);
   const [score, setScore] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const { data: practiceWords, isLoading: isLoadingPracticeWords } = useQuery<Word[]>({
+  // 获取来自总结页的练习单词
+  const [location] = useLocation();
+  const practiceWordsFromState = (window.history.state)?.practiceWords as Word[] | undefined;
+
+  // 创建学习会话的mutation
+  const createSessionMutation = useMutation({
+    mutationFn: async (sessionData: {
+      sessionType: string;
+      wordsLearned: number;
+      timeSpent: number;
+      accuracy: number;
+    }) => {
+      const response = await apiRequest("POST", "/api/study-sessions", sessionData);
+      return response.json();
+    },
+    onSuccess: (session) => {
+      setSessionId(session.id);
+    }
+  });
+
+  // 保存练习结果的mutation
+  const savePracticeResultMutation = useMutation({
+    mutationFn: async (result: {
+      sessionId: string;
+      wordId: string;
+      exerciseType: string;
+      isCorrect: boolean;
+      userAnswer: string;
+      correctAnswer: string;
+      timeSpent: number;
+    }) => {
+      return apiRequest("POST", "/api/practice-results", result);
+    },
+    onError: (error) => {
+      console.error("Failed to save practice result:", error);
+    }
+  });
+
+  const { data: practiceWordsFromAPI, isLoading: isLoadingPracticeWords } = useQuery<Word[]>({
     queryKey: ["words-for-review"],
     queryFn: () => apiRequest("GET", "/api/words-for-review").then(res => res.json()),
     staleTime: 5 * 60 * 1000,
+    enabled: !practiceWordsFromState, // 只有当没有来自总结页的单词时才调用API
   });
+
+  // 优先使用来自总结页的单词，否则使用API获取的单词
+  const practiceWords = practiceWordsFromState || practiceWordsFromAPI;
 
   const { data: distractorWords, isLoading: isLoadingDistractors } = useQuery<Word[]>({
     queryKey: ["all-words"],
@@ -55,6 +100,14 @@ export default function Practice() {
       return;
     }
 
+    // 创建练习会话
+    createSessionMutation.mutate({
+      sessionType: practiceWordsFromState ? "targeted_practice" : "general_practice",
+      wordsLearned: generatedQuestions.length,
+      timeSpent: 0,
+      accuracy: 0,
+    });
+
     setQuestions(generatedQuestions);
     setCurrentQuestionIndex(0);
     setScore(0);
@@ -71,6 +124,19 @@ export default function Practice() {
     setQuestions(prev => prev.map((q, index) => index === currentQuestionIndex ? { ...q, userAnswer: answer, isCorrect } : q));
     if (isCorrect) setScore(score + 1);
 
+    // 保存练习结果（只有当有sessionId时才保存）
+    if (sessionId) {
+      savePracticeResultMutation.mutate({
+        sessionId,
+        wordId: currentQuestion.word.id,
+        exerciseType: currentQuestion.type,
+        isCorrect,
+        userAnswer: answer,
+        correctAnswer: currentQuestion.correctAnswer,
+        timeSpent: 0, // 暂时设为0，后续可以添加计时功能
+      });
+    }
+
     toast({ title: isCorrect ? "正确！" : "不正确", description: isCorrect ? "" : `正确答案: ${currentQuestion.correctAnswer}`, variant: isCorrect ? "default" : "destructive" });
     setIsAnswered(true);
     setShowCorrection(true);
@@ -82,8 +148,25 @@ export default function Practice() {
       setIsAnswered(false);
       setShowCorrection(false);
     } else {
-      toast({ title: "练习完成！", description: `你的得分是: ${score} / ${questions.length}`, duration: 5000 });
+      // 练习完成，更新会话的最终统计
+      const accuracy = Math.round((score / questions.length) * 100);
+
+      if (sessionId) {
+        // 这里可以添加更新会话最终数据的API调用
+        // 目前我们先跳过，因为会话已经创建了
+      }
+
+      // 失效相关缓存
+      queryClient.invalidateQueries({ queryKey: ["words-for-review"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+
+      toast({
+        title: "练习完成！",
+        description: `你的得分是: ${score} / ${questions.length} (${accuracy}%)`,
+        duration: 5000
+      });
       setView("setup");
+      setSessionId(null); // 重置sessionId
     }
   };
 
@@ -112,7 +195,14 @@ export default function Practice() {
   if (view === "setup") {
     return (
       <div className="max-w-3xl mx-auto space-y-8">
-        <h2 className="text-3xl font-bold text-foreground">设置练习</h2>
+        <div>
+          <h2 className="text-3xl font-bold text-foreground">
+            {practiceWordsFromState ? "巩固练习" : "设置练习"}
+          </h2>
+          {practiceWordsFromState && (
+            <p className="text-muted-foreground mt-2">针对刚才学习中不熟悉的单词进行重点练习</p>
+          )}
+        </div>
         <Card>
           <CardHeader>
             <CardTitle>选择题型</CardTitle>
@@ -136,11 +226,21 @@ export default function Practice() {
         <Card>
           <CardHeader>
             <CardTitle>练习词汇</CardTitle>
-            <CardDescription>本次将练习以下 {practiceWords.length} 个单词。</CardDescription>
+            <CardDescription>
+              {practiceWordsFromState
+                ? `正在巩固学习总结中的 ${practiceWords.length} 个需要重点练习的单词。`
+                : `本次将练习以下 ${practiceWords.length} 个单词。`
+              }
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             {practiceWords.map(word => (
-              <Badge key={word.id} variant="secondary">{word.word}</Badge>
+              <Badge
+                key={word.id}
+                variant={practiceWordsFromState ? "destructive" : "secondary"}
+              >
+                {word.word}
+              </Badge>
             ))}
           </CardContent>
         </Card>

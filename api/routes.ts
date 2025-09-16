@@ -136,9 +136,20 @@ export function registerRoutes(app: Express) {
     try {
       const { wordId } = req.params;
       const progressData = req.body;
+      console.log("Progress data received by backend:", progressData);
+
+      // Convert date strings back to Date objects for Drizzle
+      if (progressData.nextReview && typeof progressData.nextReview === 'string') {
+        progressData.nextReview = new Date(progressData.nextReview);
+      }
+      if (progressData.lastStudied && typeof progressData.lastStudied === 'string') {
+        progressData.lastStudied = new Date(progressData.lastStudied);
+      }
+
       const updatedProgress = await storage.updateUserProgress((req.user as User).id, wordId, progressData);
       res.json(updatedProgress);
     } catch (error) {
+      console.error("Failed to update progress:", error);
       res.status(500).json({ message: "Failed to update progress" });
     }
   });
@@ -146,8 +157,10 @@ export function registerRoutes(app: Express) {
   app.get("/api/words-for-review", isAuthenticated, async (req, res) => {
     try {
       const words = await storage.getWordsForReview((req.user as User).id);
+      console.log("Words for review returned:", words.length);
       res.json(words);
     } catch (error) {
+      console.error("Failed to fetch review words:", error);
       res.status(500).json({ message: "Failed to fetch review words" });
     }
   });
@@ -158,13 +171,16 @@ export function registerRoutes(app: Express) {
       const activePlan = await storage.getActiveStudyPlan(userId);
 
       if (!activePlan) {
+        console.log("No active plan found for new words.");
         return res.json([]); // No active plan, return no new words
       }
 
       const { targetCategory, dailyWordCount } = activePlan;
       const words = await storage.getNewWordsForPlan(userId, targetCategory, dailyWordCount);
+      console.log(`New words for plan (${targetCategory}, ${dailyWordCount}) returned:`, words.length);
       res.json(words);
     } catch (error) {
+      console.error("Failed to fetch new words for plan:", error);
       res.status(500).json({ message: "Failed to fetch new words for plan" });
     }
   });
@@ -195,6 +211,17 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // ===== STUDY PLANS (CRUD) =====
+
+  app.get("/api/study-plans", isAuthenticated, async (req, res) => {
+    try {
+      const plans = await storage.getAllUserPlans((req.user as User).id);
+      res.json(plans);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch study plans" });
+    }
+  });
+
   app.post("/api/study-plans", isAuthenticated, async (req, res) => {
     try {
       const planDataFromClient = req.body;
@@ -209,6 +236,7 @@ export function registerRoutes(app: Express) {
       const plan = await storage.createStudyPlan(result.data);
       res.json(plan);
     } catch (error) {
+      console.error("Failed to create study plan:", error);
       res.status(500).json({ message: "Failed to create study plan" });
     }
   });
@@ -225,6 +253,7 @@ export function registerRoutes(app: Express) {
   app.patch("/api/study-plans/:id", isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
+      // We don't use a Zod schema here for partial updates, but in a real app you would.
       const updates = req.body;
       const updatedPlan = await storage.updateStudyPlan((req.user as User).id, id, updates);
       res.json(updatedPlan);
@@ -233,11 +262,34 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/study-plans/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteStudyPlan((req.user as User).id, id);
+      res.status(204).send(); // 204 No Content
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete study plan" });
+    }
+  });
+
+  app.post("/api/study-plans/:id/activate", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const plan = await storage.activateStudyPlan((req.user as User).id, id);
+      res.json(plan);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to activate study plan" });
+    }
+  });
+
+
+  // ===== DASHBOARD =====
   app.get("/api/dashboard/stats", isAuthenticated, async (req, res) => {
     try {
       const stats = await storage.getDashboardStats((req.user as User).id);
       res.json(stats);
     } catch (error) {
+      console.error("Failed to fetch dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
     }
   });
