@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Check, X } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Check, X } from "lucide-react";
 import type { WordWithProgress, UserProgress } from "@shared/schema";
 import WordCard from "@/components/word-card";
+import SessionWordList from "@/components/session-word-list";
 import { apiRequest } from "@/lib/queryClient";
 import { SpacedRepetitionScheduler, ReviewResult, ReviewSchedule } from "@/lib/spaced-repetition";
 
 // Define a type for words in the current session, including the user's feedback
-type SessionWord = WordWithProgress & { result?: { quality: number } };
+export type SessionWord = WordWithProgress & { result?: { quality: number } };
 
 // Shuffles an array in place and returns it
 function shuffle<T>(array: T[]): T[] {
@@ -28,7 +27,6 @@ export default function Study() {
   const [isSessionInitialized, setIsSessionInitialized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
@@ -51,14 +49,8 @@ export default function Study() {
     }
   }, [reviewWords, newWords, isSessionInitialized]);
 
-  // 创建学习会话的mutation
   const createStudySessionMutation = useMutation({
-    mutationFn: async (sessionData: {
-      sessionType: string;
-      wordsLearned: number;
-      timeSpent: number;
-      accuracy: number;
-    }) => {
+    mutationFn: async (sessionData: { sessionType: string; wordsLearned: number; timeSpent: number; accuracy: number; }) => {
       const response = await apiRequest("POST", "/api/study-sessions", sessionData);
       return response.json();
     },
@@ -67,7 +59,6 @@ export default function Study() {
     }
   });
 
-  // 当会话单词加载完毕时，创建学习会话并记录开始时间
   useEffect(() => {
     if (sessionWords.length > 0 && !sessionId && !sessionStartTime) {
       setSessionStartTime(new Date());
@@ -78,7 +69,7 @@ export default function Study() {
         accuracy: 0,
       });
     }
-  }, [sessionWords, sessionId, sessionStartTime]);
+  }, [sessionWords, sessionId, sessionStartTime, createStudySessionMutation]);
 
   const updateProgressMutation = useMutation({
     mutationFn: async ({ wordId, updates }: { wordId: string; updates: Partial<UserProgress> }) => {
@@ -94,10 +85,6 @@ export default function Study() {
     const currentWord = sessionWords[currentWordIndex];
     if (!currentWord) return;
 
-    console.log("currentWord.progress.nextReview:", currentWord.progress?.nextReview, typeof currentWord.progress?.nextReview);
-    console.log("currentWord.progress.lastStudied:", currentWord.progress?.lastStudied, typeof currentWord.progress?.lastStudied);
-
-    // Store the result for the session summary page
     const updatedWords = [...sessionWords];
     updatedWords[currentWordIndex].result = { quality };
     setSessionWords(updatedWords);
@@ -122,9 +109,6 @@ export default function Study() {
         lastStudied: new Date(),
         timesStudied: (currentWord.progress?.timesStudied ?? 0) + 1,
         timesCorrect: (currentWord.progress?.timesCorrect ?? 0) + (isCorrect ? 1 : 0),
-        isStarred: currentWord.progress?.isStarred ?? false,
-        isInVocabularyBook: currentWord.progress?.isInVocabularyBook ?? false,
-        masteryLevel: currentWord.progress?.masteryLevel ?? 0,
     };
 
     updateProgressMutation.mutate({ wordId: currentWord.id, updates });
@@ -135,15 +119,13 @@ export default function Study() {
     if (currentWordIndex < sessionWords.length - 1) {
       setCurrentWordIndex(currentWordIndex + 1);
     } else {
-      // Session finished, calculate final statistics and update session
       const correctCount = sessionWords.filter(w => w.result?.quality === 5).length;
       const accuracy = sessionWords.length > 0 ? (correctCount / sessionWords.length) * 100 : 0;
       const timeSpent = sessionStartTime ? Math.floor((Date.now() - sessionStartTime.getTime()) / 1000) : 0;
 
-      // Update session with final statistics (if sessionId exists)
       if (sessionId) {
         apiRequest("PUT", `/api/study-sessions/${sessionId}`, {
-          accuracy: accuracy / 100, // Convert to decimal
+          accuracy: accuracy / 100, 
           timeSpent,
           wordsLearned: sessionWords.length,
         }).catch(error => {
@@ -151,7 +133,6 @@ export default function Study() {
         });
       }
 
-      // Navigate to summary page with results
       setLocation('/session-summary', { state: { sessionWords: sessionWords } });
     }
   };
@@ -162,9 +143,13 @@ export default function Study() {
     }
   };
 
-  const isLoading = isLoadingReview || isLoadingNew;
+  const handleWordClick = (index: number) => {
+    setCurrentWordIndex(index);
+  };
 
-  if (isLoading) {
+  const isLoading = isLoadingReview || isLoadingNew || !isSessionInitialized;
+
+  if (isLoading && sessionWords.length === 0) {
     return <div className="text-center py-16">正在为你准备学习卡片...</div>;
   }
 
@@ -184,24 +169,20 @@ export default function Study() {
     <div className="space-y-8">
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-foreground mb-2">记单词</h2>
-        <p className="text-muted-foreground">今日还剩 {sessionWords.length - currentWordIndex -1} 个单词需要学习/复习</p>
+        <p className="text-muted-foreground">本次共 {sessionWords.length} 个单词，还剩 {sessionWords.length - currentWordIndex -1} 个</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         <div className="lg:col-span-2">
           <WordCard word={currentWord} onPlayAudio={() => {}} />
-          <div className="flex justify-between items-center mt-6">
-            <Button variant="outline" onClick={previousWord} disabled={currentWordIndex === 0}>上一个</Button>
-            <div className="flex space-x-4">
-              <Button variant="destructive" size="lg" onClick={() => handleFeedback(1)} disabled={!currentWord || isLoading}><X className="mr-2 h-4 w-4" />我忘了</Button>
-              <Button variant="outline" size="lg" onClick={() => handleFeedback(3)} disabled={!currentWord || isLoading}>不熟悉</Button>
-              <Button className="bg-green-500 hover:bg-green-600 text-white" size="lg" onClick={() => handleFeedback(5)} disabled={!currentWord || isLoading}><Check className="mr-2 h-4 w-4" />我认识</Button>
-            </div>
-            <Button variant="outline" onClick={nextWord} disabled={currentWordIndex >= sessionWords.length - 1}>下一个</Button>
+          <div className="flex justify-center items-center mt-6 space-x-4">
+              <Button variant="destructive" size="lg" onClick={() => handleFeedback(1)} disabled={!currentWord}><X className="mr-2 h-4 w-4" />我忘了</Button>
+              <Button variant="outline" size="lg" onClick={() => handleFeedback(3)} disabled={!currentWord}>不熟悉</Button>
+              <Button className="bg-green-500 hover:bg-green-600 text-white" size="lg" onClick={() => handleFeedback(5)} disabled={!currentWord}><Check className="mr-2 h-4 w-4" />我认识</Button>
           </div>
         </div>
-        <div className="space-y-6">
-          {/* Sidebar can be added back if needed */}
+        <div className="space-y-6 lg:sticky lg:top-24">
+          <SessionWordList words={sessionWords} currentWordIndex={currentWordIndex} onWordClick={handleWordClick} />
         </div>
       </div>
     </div>
