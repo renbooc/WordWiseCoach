@@ -25,6 +25,7 @@ function shuffle<T>(array: T[]): T[] {
 export default function Study() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [sessionWords, setSessionWords] = useState<SessionWord[]>([]);
+  const [isSessionInitialized, setIsSessionInitialized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const { toast } = useToast();
@@ -42,12 +43,13 @@ export default function Study() {
   });
 
   useEffect(() => {
-    if (reviewWords && newWords) {
+    if (reviewWords && newWords && !isSessionInitialized) {
       const combined = [...reviewWords, ...newWords];
       setSessionWords(shuffle(combined));
       setCurrentWordIndex(0);
+      setIsSessionInitialized(true);
     }
-  }, [reviewWords, newWords]);
+  }, [reviewWords, newWords, isSessionInitialized]);
 
   // 创建学习会话的mutation
   const createStudySessionMutation = useMutation({
