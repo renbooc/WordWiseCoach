@@ -105,11 +105,48 @@ export function registerRoutes(app: Express) {
       if (!result.success) {
         return res.status(400).json({ message: "Invalid word data", errors: result.error.issues });
       }
+
+      // Check for duplicate word
+      const existingWord = await storage.findWordByText(result.data.word);
+      if (existingWord) {
+        return res.status(409).json({ message: `单词 '${result.data.word}' 已存在。` });
+      }
+
       const word = await storage.createWord(result.data);
       res.json(word);
     } catch (error) {
       console.error("Error creating word:", error);
       res.status(500).json({ message: "Failed to create word" });
+    }
+  });
+
+  app.put("/api/words/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      // For updates, we can use a partial schema
+      const result = insertWordSchema.partial().safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: "Invalid word data", errors: result.error.issues });
+      }
+      const updatedWord = await storage.updateWord(id, result.data);
+      if (!updatedWord) {
+        return res.status(404).json({ message: "Word not found" });
+      }
+      res.json(updatedWord);
+    } catch (error) {
+      console.error(`Error updating word ${req.params.id}:`, error);
+      res.status(500).json({ message: "Failed to update word" });
+    }
+  });
+
+  app.delete("/api/words/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteWord(id);
+      res.status(204).send(); // 204 No Content
+    } catch (error) {
+      console.error(`Error deleting word ${req.params.id}:`, error);
+      res.status(500).json({ message: "Failed to delete word" });
     }
   });
 

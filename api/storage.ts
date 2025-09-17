@@ -15,7 +15,10 @@ export interface IStorage {
   getWordsByCategory(category: string): Promise<Word[]>;
   getWord(id: string): Promise<Word | undefined>;
   searchWords(query: string): Promise<Word[]>;
+  findWordByText(word: string): Promise<Word | undefined>;
   createWord(word: InsertWord): Promise<Word>;
+  updateWord(id: string, word: Partial<InsertWord>): Promise<Word>;
+  deleteWord(id: string): Promise<void>;
   
   // User progress
   getUserProgress(userId: string, wordId: string): Promise<UserProgress | undefined>;

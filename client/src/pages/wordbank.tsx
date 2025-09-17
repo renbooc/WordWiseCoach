@@ -1,18 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Filter, Volume2, Star, Trash2, ChevronLeft, ChevronRight, Plus, Upload, FileText, Download } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Search, Volume2, Star, Trash2, Plus, Upload, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { WordWithProgress } from "@shared/schema";
+import type { Word, WordWithProgress } from "@shared/schema";
 import { insertWordSchema } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, HttpError } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,16 +32,17 @@ const STATIC_CATEGORIES = {
   "mastered": "已掌握",
 };
 
-const addWordSchema = insertWordSchema.extend({
-  difficulty: z.coerce.number().min(1).max(5),
-  frequency: z.coerce.number().min(1).max(10),
-});
+const addWordSchema = insertWordSchema.extend({});
+const editWordSchema = insertWordSchema.partial();
 
 export default function WordBank() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddWordDialog, setShowAddWordDialog] = useState(false);
+  const [showEditWordDialog, setShowEditWordDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedWord, setSelectedWord] = useState<Word | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const wordsPerPage = 20;
@@ -51,33 +52,90 @@ export default function WordBank() {
 
   const addWordForm = useForm<z.infer<typeof addWordSchema>>({
     resolver: zodResolver(addWordSchema),
-    defaultValues: { word: "", phonetic: "", partOfSpeech: "noun", chineseDefinition: "", englishExample: "", chineseExample: "", difficulty: 1, category: "junior", frequency: 1 },
+    defaultValues: { word: "", phonetic: "", partOfSpeech: "noun", chineseDefinition: "", englishExample: "", chineseExample: "", category: "junior" },
   });
+
+  const editWordForm = useForm<z.infer<typeof editWordSchema>>({
+    resolver: zodResolver(editWordSchema),
+  });
+
+  useEffect(() => {
+    if (selectedWord) {
+      editWordForm.reset(selectedWord);
+    }
+  }, [selectedWord, editWordForm]);
 
   const { data: allWords, isLoading, isError } = useQuery<WordWithProgress[]>({
     queryKey: ["/api/words"],
     queryFn: () => apiRequest("GET", "/api/words").then(res => res.json()),
   });
 
+  const handleApiError = async (error: unknown, defaultMessage: string) => {
+    let description = defaultMessage;
+    if (error instanceof HttpError) {
+      try {
+        const data = await error.response.json();
+        description = data.message || defaultMessage;
+      } catch (e) {
+        // Ignore JSON parsing error
+      }
+    }
+    toast({ title: "操作失败", description, variant: "destructive" });
+  };
+
   const toggleStarMutation = useMutation({
     mutationFn: (wordId: string) => apiRequest("POST", `/api/words/${wordId}/star`),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); toast({ title: "标记状态已更新" }); },
+    onError: (error) => handleApiError(error, "更新标记失败"),
   });
 
   const createWordMutation = useMutation({
     mutationFn: (wordData: z.infer<typeof addWordSchema>) => apiRequest("POST", `/api/words`, wordData),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); setShowAddWordDialog(false); addWordForm.reset(); toast({ title: "单词创建成功！" }); },
-    onError: () => toast({ title: "创建失败", variant: "destructive" }),
+    onError: (error) => handleApiError(error, "创建失败，请稍后再试。"),
   });
-  
+
+  const updateWordMutation = useMutation({
+    mutationFn: ({ id, ...wordData }: { id: string } & z.infer<typeof editWordSchema>) => apiRequest("PUT", `/api/words/${id}`, wordData),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); setShowEditWordDialog(false); setSelectedWord(null); toast({ title: "单词更新成功！" }); },
+    onError: (error) => handleApiError(error, "更新失败，请稍后再试。"),
+  });
+
+  const deleteWordMutation = useMutation({
+    mutationFn: (wordId: string) => apiRequest("DELETE", `/api/words/${wordId}`),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); setShowDeleteConfirm(false); setSelectedWord(null); toast({ title: "单词已删除" }); },
+    onError: (error) => handleApiError(error, "删除失败，请稍后再试。"),
+  });
+
   const importWordsMutation = useMutation({
     mutationFn: (formData: FormData) => apiRequest("POST", `/api/words/import`, formData),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/words"] }); setShowImportDialog(false); setImportFile(null); toast({ title: "导入成功！" }); },
-    onError: () => toast({ title: "导入失败", variant: "destructive" }),
+    onError: (error) => handleApiError(error, "导入失败，请检查文件格式。"),
   });
 
-  const onSubmitWord = (data: z.infer<typeof addWordSchema>) => createWordMutation.mutate(data);
-  
+  const onSubmitAddWord = (data: z.infer<typeof addWordSchema>) => createWordMutation.mutate(data);
+  const onSubmitEditWord = (data: z.infer<typeof editWordSchema>) => {
+    if (selectedWord) {
+      updateWordMutation.mutate({ id: selectedWord.id, ...data });
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (selectedWord) {
+      deleteWordMutation.mutate(selectedWord.id);
+    }
+  };
+
+  const openEditDialog = (word: Word) => {
+    setSelectedWord(word);
+    setShowEditWordDialog(true);
+  };
+
+  const openDeleteDialog = (word: Word) => {
+    setSelectedWord(word);
+    setShowDeleteConfirm(true);
+  };
+
   const handleFileImport = () => {
     if (!importFile) return;
     const formData = new FormData();
@@ -127,7 +185,7 @@ export default function WordBank() {
           <Dialog open={showAddWordDialog} onOpenChange={setShowAddWordDialog}>
             <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" />录入单词</Button></DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle className="text-xl font-bold">手工录入单词</DialogTitle></DialogHeader>
-              <Form {...addWordForm}><form onSubmit={addWordForm.handleSubmit(onSubmitWord)} className="space-y-6 p-1">
+              <Form {...addWordForm}><form onSubmit={addWordForm.handleSubmit(onSubmitAddWord)} className="space-y-6 p-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={addWordForm.control} name="word" render={({ field }) => (<FormItem><FormLabel>英文单词 *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                   <FormField control={addWordForm.control} name="phonetic" render={({ field }) => (<FormItem><FormLabel>音标 *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -185,7 +243,8 @@ export default function WordBank() {
                       <td className="p-4 max-w-xs truncate align-top">{word.chineseDefinition}</td>
                       <td className="p-4 align-top"><div className="flex items-center space-x-1">
                         <Button variant="ghost" size="sm" onClick={() => toggleStarMutation.mutate(word.id)} className={word.progress?.isStarred ? "text-chart-3" : ""}><Star className={`h-4 w-4 ${word.progress?.isStarred ? "fill-current" : ""}`} /></Button>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(word)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => openDeleteDialog(word)}><Trash2 className="h-4 w-4" /></Button>
                       </div></td>
                     </tr>
                   ))}
@@ -196,6 +255,48 @@ export default function WordBank() {
           {totalPages > 1 && <div className="p-4 border-t flex justify-between items-center"><p className="text-sm">第 {currentPage} / {totalPages} 页</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage===1}>上一页</Button><Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages}>下一页</Button></div></div>}
         </Card></div>
       </div>
+
+      {/* Edit Word Dialog */}
+      <Dialog open={showEditWordDialog} onOpenChange={setShowEditWordDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-xl font-bold">编辑单词</DialogTitle></DialogHeader>
+          <Form {...editWordForm}><form onSubmit={editWordForm.handleSubmit(onSubmitEditWord)} className="space-y-6 p-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField control={editWordForm.control} name="word" render={({ field }) => (<FormItem><FormLabel>英文单词 *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={editWordForm.control} name="phonetic" render={({ field }) => (<FormItem><FormLabel>音标 *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField control={editWordForm.control} name="partOfSpeech" render={({ field }) => (<FormItem><FormLabel>词性 *</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="noun">名词</SelectItem><SelectItem value="verb">动词</SelectItem><SelectItem value="adjective">形容词</SelectItem><SelectItem value="adverb">副词</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} />
+              <FormField control={editWordForm.control} name="category" render={({ field }) => (<FormItem><FormLabel>系统分类 *</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent>{Object.entries(SYSTEM_CATEGORIES).map(([key, name]) => (<SelectItem key={key} value={key}>{name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)} />
+            </div>
+            <FormField control={editWordForm.control} name="chineseDefinition" render={({ field }) => (<FormItem><FormLabel>中文释义 *</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+            <FormField control={editWordForm.control} name="englishExample" render={({ field }) => (<FormItem><FormLabel>英文例句 *</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+            <FormField control={editWordForm.control} name="chineseExample" render={({ field }) => (<FormItem><FormLabel>中文例句 *</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>)} />
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setShowEditWordDialog(false)}>取消</Button>
+              <Button type="submit" disabled={updateWordMutation.isPending}>{updateWordMutation.isPending ? "更新中..." : "更新单词"}</Button>
+            </div>
+          </form></Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              你确定要删除单词 "{selectedWord?.word}" 吗？此操作无法撤销，与该单词相关的学习进度也将被一b并删除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSelectedWord(null)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} disabled={deleteWordMutation.isPending} className="bg-destructive hover:bg-destructive/90">
+              {deleteWordMutation.isPending ? "删除中..." : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

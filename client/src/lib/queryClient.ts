@@ -1,9 +1,18 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export class HttpError extends Error {
+  response: Response;
+
+  constructor(response: Response, message?: string) {
+    super(message || response.statusText);
+    this.response = response;
+    Object.setPrototypeOf(this, HttpError.prototype);
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    throw new HttpError(res, `HTTP error! status: ${res.status}`);
   }
 }
 

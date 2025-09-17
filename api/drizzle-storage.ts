@@ -40,9 +40,26 @@ export class DrizzleStorage implements IStorage {
     return await db.select().from(words).where(sql`word ILIKE ${`%${query}%`}`);
   }
 
+  async findWordByText(word: string): Promise<Word | undefined> {
+    const result = await db.select().from(words).where(eq(words.word, word));
+    return result[0];
+  }
+
   async createWord(word: InsertWord): Promise<Word> {
     const result = await db.insert(words).values(word).returning();
     return result[0];
+  }
+
+  async updateWord(id: string, word: Partial<InsertWord>): Promise<Word> {
+    const result = await db.update(words).set(word).where(eq(words.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteWord(id: string): Promise<void> {
+    // First, delete any user progress associated with this word
+    await db.delete(userProgress).where(eq(userProgress.wordId, id));
+    // Then, delete the word itself
+    await db.delete(words).where(eq(words.id, id));
   }
   
   // ===== USER PROGRESS =====
